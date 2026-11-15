@@ -159,9 +159,25 @@ class BleLink(
         }
     }
 
+    /**
+     * The Mac's Bluetooth daemon can keep the link up after the agent app quits, so a
+     * connection that stops delivering stats is treated as dead.
+     */
+    private val watchdog = Runnable {
+        if (running && connected) dropAndRescan()
+    }
+
+    private fun kickWatchdog() {
+        main.removeCallbacks(watchdog)
+        main.postDelayed(watchdog, 6000)
+    }
+
     private fun dispatch(uuid: UUID, value: ByteArray) {
         when (uuid) {
-            Protocol.STATS -> Protocol.parseStats(value)?.let(onStats)
+            Protocol.STATS -> {
+                kickWatchdog()
+                Protocol.parseStats(value)?.let(onStats)
+            }
             Protocol.CLAUDE -> Protocol.parseClaude(value)?.let(onClaude)
             Protocol.INFO -> onInfo(String(value, Charsets.UTF_8))
         }
@@ -183,6 +199,11 @@ class BleLink(
             main.post { if (g === gatt) g.discoverServices() }
         }
 
+        override fun onServiceChanged(g: BluetoothGatt) {
+            // The agent restarted and re-registered its service: subscribe again.
+            main.post { if (g === gatt) g.discoverServices() }
+        }
+
         override fun onServicesDiscovered(g: BluetoothGatt, status: Int) {
             main.post {
                 if (g !== gatt) return@post
@@ -190,6 +211,7 @@ class BleLink(
                     return@post dropAndRescan()
                 }
                 connected = true
+                kickWatchdog()
                 onLink(LinkState.Connected)
                 ops.clear()
                 ops += read(Protocol.INFO)

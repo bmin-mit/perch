@@ -43,8 +43,12 @@ enum ClaudeSessions {
         default: // SessionStart, Stop, SubagentStop, …
             state = .idle
         }
+        // Name the session after the folder it started in; `cwd` follows later `cd`s, so keep the first name.
         let cwd = json["cwd"] as? String ?? ""
-        let name = cwd.isEmpty ? String(safeId.prefix(8)) : URL(fileURLWithPath: cwd).lastPathComponent
+        let existing = (try? Data(contentsOf: file))
+            .flatMap { try? JSONSerialization.jsonObject(with: $0) as? [String: Any] }?["name"] as? String
+        let name = existing
+            ?? (cwd.isEmpty ? String(safeId.prefix(8)) : URL(fileURLWithPath: cwd).lastPathComponent)
         let record: [String: Any] = ["name": name, "state": Int(state.rawValue)]
         try? FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
         if let data = try? JSONSerialization.data(withJSONObject: record) {
