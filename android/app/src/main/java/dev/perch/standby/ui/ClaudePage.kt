@@ -22,8 +22,12 @@ import androidx.compose.ui.draw.clipToBounds
 import kotlin.math.roundToInt
 import androidx.compose.foundation.layout.size
 import androidx.compose.material3.Icon
-import androidx.compose.material3.ButtonDefaults
-import androidx.compose.material3.TextButton
+import androidx.compose.material3.IconButton
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.material.icons.outlined.Check
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.Delete
 import androidx.compose.material3.MaterialTheme
@@ -80,6 +84,17 @@ fun ClaudePage(mac: MacSnapshot, nowSec: Long, use24h: Boolean, onRemove: (Strin
 
     // Follow the most urgent session unless the user picked one in the last two minutes.
     var pinned by remember { mutableStateOf<String?>(null) }
+    // Tapping a row reveals its bin for 3 s; tapping the bin turns it into a tick to confirm.
+    var revealed by remember { mutableStateOf<String?>(null) }
+    var armed by remember { mutableStateOf(false) }
+    var revealTick by remember { mutableIntStateOf(0) }
+    LaunchedEffect(revealTick) {
+        if (revealed != null) {
+            delay(3_000)
+            revealed = null
+            armed = false
+        }
+    }
     LaunchedEffect(pinned) {
         if (pinned != null) {
             delay(120_000)
@@ -102,12 +117,37 @@ fun ClaudePage(mac: MacSnapshot, nowSec: Long, use24h: Boolean, onRemove: (Strin
             }
             LazyColumn(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                 items(sessions, key = { it.id }) { s ->
-                    SessionRow(s, nowSec, s.id == selected.id) { pinned = s.id }
+                    SessionRow(
+                        s = s,
+                        nowSec = nowSec,
+                        selected = s.id == selected.id,
+                        action = when {
+                            revealed != s.id -> RowAction.None
+                            armed -> RowAction.Confirm
+                            else -> RowAction.Bin
+                        },
+                        onClick = {
+                            pinned = s.id
+                            revealed = s.id
+                            armed = false
+                            revealTick++
+                        },
+                        onAction = {
+                            if (armed) {
+                                onRemove(s.id)
+                                revealed = null
+                                armed = false
+                            } else {
+                                armed = true
+                                revealTick++ // another 3 s to confirm
+                            }
+                        },
+                    )
                 }
             }
             SystemStrip(mac)
         }
-        SessionDetailPanel(selected, nowSec, use24h, onRemove, Modifier.weight(1f).fillMaxHeight())
+        SessionDetailPanel(selected, nowSec, use24h, Modifier.weight(1f).fillMaxHeight())
     }
 }
 
@@ -140,14 +180,27 @@ private fun StripItem(icon: Int, description: String, value: String) {
     }
 }
 
+private enum class RowAction { None, Bin, Confirm }
+
 @Composable
-private fun SessionRow(s: SessionDetail, nowSec: Long, selected: Boolean, onClick: () -> Unit) {
+private fun SessionRow(
+    s: SessionDetail,
+    nowSec: Long,
+    selected: Boolean,
+    action: RowAction,
+    onClick: () -> Unit,
+    onAction: () -> Unit,
+) {
     Surface(
         color = if (selected) MaterialTheme.colorScheme.surfaceContainerHigh else Color.Transparent,
         shape = RoundedCornerShape(20.dp),
         modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(20.dp)).clickable(onClick = onClick),
     ) {
-        Row(Modifier.padding(horizontal = 14.dp, vertical = 10.dp), verticalAlignment = Alignment.CenterVertically) {
+        // Fixed height, so the action button appearing never shifts the list.
+        Row(
+            Modifier.height(64.dp).padding(start = 14.dp, end = 4.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
             Dot(claudeColor(s.state))
             Spacer(Modifier.width(12.dp))
             Column(Modifier.weight(1f)) {
@@ -166,6 +219,16 @@ private fun SessionRow(s: SessionDetail, nowSec: Long, selected: Boolean, onClic
                     overflow = TextOverflow.Ellipsis,
                 )
             }
+            AnimatedVisibility(visible = action != RowAction.None, enter = fadeIn(), exit = fadeOut()) {
+                val confirm = action == RowAction.Confirm
+                IconButton(onClick = onAction) {
+                    Icon(
+                        if (confirm) Icons.Outlined.Check else Icons.Outlined.Delete,
+                        contentDescription = if (confirm) "Confirm remove ${s.name}" else "Remove ${s.name}",
+                        tint = if (confirm) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+            }
         }
     }
 }
@@ -175,7 +238,6 @@ private fun SessionDetailPanel(
     s: SessionDetail,
     nowSec: Long,
     use24h: Boolean,
-    onRemove: (String) -> Unit,
     modifier: Modifier,
 ) {
     val waiting = s.state == ClaudeState.Waiting
@@ -199,7 +261,6 @@ private fun SessionDetailPanel(
             s.model?.let { Tag(modelName(it)) }
             s.mode?.takeIf { it != "default" }?.let { Tag(modeName(it), WaitingColor) }
           }
-          RemoveButton(s.id, onRemove)
         }
         Text(
             s.cwd,
@@ -259,7 +320,8 @@ private fun SessionDetailPanel(
               // Bottom, pinned: token mix, then the session counters.
               TokenBars(s)
               Spacer(Modifier.height(12.dp))
-              Row(horizontalArrangement = Arrangement.spacedBy(22.dp)) {
+              // Spread across the column so a long value (e.g. "1h 05m") can't push "Context" off the edge.
+              Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
                   Stat("Session", duration(nowSec - s.started))
                   Stat("Prompts", s.prompts.toString())
                   Stat("Tools", s.tools.toString())
@@ -348,28 +410,6 @@ private fun TokenBar(label: String, count: Long, total: Long, color: Color, modi
             color = MaterialTheme.colorScheme.onSurfaceVariant,
             maxLines = 1,
         )
-    }
-}
-
-/** Two taps to remove, so a stray touch on a bedside screen can't delete anything. */
-@Composable
-private fun RemoveButton(id: String, onRemove: (String) -> Unit) {
-    var armed by remember(id) { mutableStateOf(false) }
-    LaunchedEffect(armed) {
-        if (armed) {
-            delay(3_000)
-            armed = false
-        }
-    }
-    TextButton(
-        onClick = { if (armed) onRemove(id) else armed = true },
-        colors = ButtonDefaults.textButtonColors(
-            contentColor = if (armed) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant,
-        ),
-    ) {
-        Icon(Icons.Outlined.Delete, contentDescription = null, modifier = Modifier.size(18.dp))
-        Spacer(Modifier.width(6.dp))
-        Text(if (armed) "Tap again to remove" else "Remove", style = MaterialTheme.typography.labelLarge)
     }
 }
 
