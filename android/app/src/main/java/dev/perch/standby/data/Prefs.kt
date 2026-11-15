@@ -14,6 +14,8 @@ data class Settings(
     /** Blank means "use the device location". */
     val city: String = "",
     val clockFace: Int = 0,
+    /** Switch to a dim red, monochrome look when the room is dark. */
+    val autoNight: Boolean = true,
 )
 
 class Prefs(context: Context) {
@@ -31,6 +33,7 @@ class Prefs(context: Context) {
             .putBoolean("demoMac", next.demoMac)
             .putString("city", next.city)
             .putInt("clockFace", next.clockFace)
+            .putBoolean("autoNight", next.autoNight)
             .apply()
     }
 
@@ -41,6 +44,7 @@ class Prefs(context: Context) {
         demoMac = sp.getBoolean("demoMac", isEmulator()),
         city = sp.getString("city", "") ?: "",
         clockFace = sp.getInt("clockFace", 0),
+        autoNight = sp.getBoolean("autoNight", true),
     )
 
     private fun isEmulator() =

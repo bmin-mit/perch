@@ -17,7 +17,10 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.outlined.Settings
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -60,12 +63,15 @@ fun StandbyScreen(graph: AppGraph, onRequestPermissions: (() -> Unit)? = null) {
         }
     }
 
+    val darkRoom = rememberIsDarkRoom(settings.autoNight)
+
     PerchTheme {
         Surface(Modifier.fillMaxSize(), color = Color.Black) {
             Box(
                 Modifier
                     .fillMaxSize()
                     .background(Color.Black)
+                    .nightFilter(darkRoom && !showSettings)
                     .windowInsetsPadding(WindowInsets.displayCutout)
             ) {
                 // Nudge everything a few pixels each minute so static content can't burn in.
@@ -111,11 +117,15 @@ fun StandbyScreen(graph: AppGraph, onRequestPermissions: (() -> Unit)? = null) {
                 }
 
                 if (onRequestPermissions != null) {
-                    TextButton(
+                    IconButton(
                         onClick = { showSettings = true },
                         modifier = Modifier.align(Alignment.BottomEnd),
                     ) {
-                        Text("⚙", fontSize = 18.sp, color = MaterialTheme.colorScheme.outline)
+                        Icon(
+                            Icons.Outlined.Settings,
+                            contentDescription = "Settings",
+                            tint = MaterialTheme.colorScheme.outline,
+                        )
                     }
                     if (showSettings) {
                         SettingsOverlay(

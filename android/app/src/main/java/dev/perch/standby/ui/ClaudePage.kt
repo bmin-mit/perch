@@ -57,8 +57,8 @@ fun ClaudePage(mac: MacSnapshot, nowSec: Long, use24h: Boolean) {
                 Text(
                     when {
                         mac.link != LinkState.Connected && mac.link != LinkState.Demo -> linkMessage(mac.link)
-                        sessions == null -> "Waiting for session details… (accept the pairing request if one appears)"
-                        else -> "No sessions running"
+                        sessions == null -> "Loading sessions… Accept the pairing request if one appears."
+                        else -> "No sessions running. Start Claude Code on your Mac."
                     },
                     style = MaterialTheme.typography.bodyLarge,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -119,7 +119,7 @@ private fun SessionRow(s: SessionDetail, nowSec: Long, selected: Boolean, onClic
                     overflow = TextOverflow.Ellipsis,
                 )
                 Text(
-                    "${stateWord(s)} · ${duration(nowSec - s.since)}",
+                    "${stateWord(s)} · ${duration(nowSec - activitySince(s))}",
                     style = MaterialTheme.typography.bodySmall,
                     color = claudeColor(s.state),
                     maxLines = 1,
@@ -135,7 +135,7 @@ private fun SessionDetailPanel(s: SessionDetail, nowSec: Long, use24h: Boolean, 
     val waiting = s.state == ClaudeState.Waiting
     Panel(
         modifier,
-        color = if (waiting) WaitingColor.copy(alpha = 0.16f) else MaterialTheme.colorScheme.surfaceContainer,
+        color = if (waiting) WaitingColor.copy(alpha = 0.16f) else MaterialTheme.colorScheme.surfaceContainerLow,
     ) {
         // Header: name, path and tags.
         Row(verticalAlignment = Alignment.CenterVertically) {
@@ -177,10 +177,8 @@ private fun SessionDetailPanel(s: SessionDetail, nowSec: Long, use24h: Boolean, 
                         modifier = Modifier.weight(1f, fill = false),
                     )
                     Spacer(Modifier.width(8.dp))
-                    // For a running tool, time that tool; otherwise time the current state.
-                    val from = if (s.tool != null) s.recent.firstOrNull()?.at ?: s.since else s.since
                     Text(
-                        duration(nowSec - from),
+                        duration(nowSec - activitySince(s)),
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
@@ -200,26 +198,28 @@ private fun SessionDetailPanel(s: SessionDetail, nowSec: Long, use24h: Boolean, 
                     PanelLabel("Last prompt")
                     Text(
                         "“$it”",
-                        style = MaterialTheme.typography.bodyMedium,
+                        style = MaterialTheme.typography.bodyLarge,
                         fontStyle = FontStyle.Italic,
                         maxLines = 3,
                         overflow = TextOverflow.Ellipsis,
                     )
                 }
-                Spacer(Modifier.height(12.dp))
-                Row(horizontalArrangement = Arrangement.spacedBy(18.dp)) {
+                Spacer(Modifier.height(14.dp))
+                Row(horizontalArrangement = Arrangement.spacedBy(22.dp)) {
                     Stat("Session", duration(nowSec - s.started))
                     Stat("Prompts", s.prompts.toString())
-                    Stat("Tool calls", s.tools.toString())
+                    Stat("Tools", s.tools.toString())
                     Stat("Context", tokens(s.contextTokens))
                 }
                 Spacer(Modifier.height(8.dp))
-                Row(horizontalArrangement = Arrangement.spacedBy(18.dp)) {
-                    Stat("Output", tokens(s.outputTokens))
-                    Stat("Input", tokens(s.inputTokens + s.cacheWriteTokens))
-                    Stat("Cache read", tokens(s.cacheReadTokens))
-                    Stat("Last event", duration(nowSec - s.last) + " ago")
-                }
+                Text(
+                    "${tokens(s.outputTokens)} out · ${tokens(s.inputTokens + s.cacheWriteTokens)} in · " +
+                        "${tokens(s.cacheReadTokens)} cached",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
             }
             Column(Modifier.weight(1f)) {
                 PanelLabel("Recent tools")
@@ -231,7 +231,7 @@ private fun SessionDetailPanel(s: SessionDetail, nowSec: Long, use24h: Boolean, 
                     Row(Modifier.fillMaxWidth().height(30.dp), verticalAlignment = Alignment.CenterVertically) {
                         Text(
                             clockTime(t.at, use24h),
-                            style = MaterialTheme.typography.bodySmall.copy(fontFeatureSettings = "tnum"),
+                            style = MaterialTheme.typography.bodyMedium.copy(fontFeatureSettings = "tnum"),
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                             modifier = Modifier.width(52.dp),
                         )
@@ -244,7 +244,7 @@ private fun SessionDetailPanel(s: SessionDetail, nowSec: Long, use24h: Boolean, 
                         Spacer(Modifier.width(8.dp))
                         Text(
                             t.detail ?: "",
-                            style = MaterialTheme.typography.bodySmall,
+                            style = MaterialTheme.typography.bodyMedium,
                             maxLines = 1,
                             overflow = TextOverflow.Ellipsis,
                             modifier = Modifier.weight(1f),
@@ -273,14 +273,14 @@ private fun Tag(text: String, color: Color = MaterialTheme.colorScheme.secondary
 @Composable
 private fun Stat(label: String, value: String) {
     Column {
-        Text(
-            label,
-            style = MaterialTheme.typography.labelSmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-        )
-        Text(value, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold, maxLines = 1)
+        PanelLabel(label)
+        Text(value, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.SemiBold, maxLines = 1)
     }
 }
+
+/** For a running tool, when that tool started; otherwise when the current state began. */
+private fun activitySince(s: SessionDetail): Long =
+    if (s.tool != null) s.recent.firstOrNull()?.at ?: s.since else s.since
 
 private fun stateWord(s: SessionDetail) = when (s.state) {
     ClaudeState.Waiting -> "needs you"

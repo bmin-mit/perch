@@ -65,6 +65,7 @@ fun SettingsOverlay(
                 Text("Settings", style = MaterialTheme.typography.headlineSmall)
                 SwitchRow("24-hour clock", settings.use24h) { v -> onChange { it.copy(use24h = v) } }
                 SwitchRow("Fahrenheit", settings.fahrenheit) { v -> onChange { it.copy(fahrenheit = v) } }
+                SwitchRow("Dim red in the dark", settings.autoNight) { v -> onChange { it.copy(autoNight = v) } }
                 SwitchRow("Demo Mac data (no Bluetooth)", settings.demoMac) { v -> onChange { it.copy(demoMac = v) } }
             }
             Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(10.dp)) {

@@ -1,8 +1,8 @@
 package dev.perch.standby.ui
 
 import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -16,6 +16,8 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.pager.VerticalPager
 import androidx.compose.foundation.pager.rememberPagerState
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -50,32 +52,41 @@ fun ClockPage(
     mac: MacSnapshot,
     onFaceChange: (Int) -> Unit,
 ) {
-    Row(Modifier.fillMaxSize(), horizontalArrangement = Arrangement.spacedBy(20.dp)) {
+    Row(Modifier.fillMaxSize(), verticalAlignment = Alignment.CenterVertically) {
         // Swipe up/down to switch clock faces, like StandBy.
         val faces = rememberPagerState(initialPage = settings.clockFace.coerceIn(0, FACES - 1)) { FACES }
         LaunchedEffect(faces.settledPage) { onFaceChange(faces.settledPage) }
-        VerticalPager(faces, Modifier.weight(1.7f).fillMaxHeight()) { face ->
+        VerticalPager(faces, Modifier.weight(1.8f).fillMaxHeight()) { face ->
             when (face) {
                 0 -> DigitalFace(now, settings.use24h)
                 else -> AnalogFace(now)
             }
         }
-        Column(
-            Modifier.weight(1f).fillMaxHeight(),
-            verticalArrangement = Arrangement.spacedBy(12.dp, Alignment.CenterVertically),
-        ) {
-            WeatherSummary(weather, settings.fahrenheit)
-            MacSummary(mac)
-            ClaudeSummary(mac)
+        Spacer(Modifier.width(24.dp))
+        // Glance stack: no card backgrounds, so the clock stays the hero (StandBy removes widget backgrounds).
+        Column(Modifier.weight(1f), verticalArrangement = Arrangement.Center) {
+            WeatherGlance(weather, settings.fahrenheit)
+            GlanceDivider()
+            MacGlance(mac)
+            GlanceDivider()
+            ClaudeGlance(mac)
         }
     }
+}
+
+@Composable
+private fun GlanceDivider() {
+    HorizontalDivider(
+        Modifier.padding(vertical = 14.dp),
+        color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f),
+    )
 }
 
 @Composable
 private fun DigitalFace(now: LocalDateTime, use24h: Boolean) {
     BoxWithConstraints(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
         // "00:00" in a bold face is roughly 2.7 em wide; size it to fill the box.
-        val size = with(LocalDensity.current) { minOf(maxWidth / 2.8f, maxHeight * 0.62f).toSp() }
+        val size = with(LocalDensity.current) { minOf(maxWidth / 2.75f, maxHeight * 0.62f).toSp() }
         Column(horizontalAlignment = Alignment.CenterHorizontally) {
             Row(verticalAlignment = Alignment.Bottom) {
                 Text(
@@ -167,68 +178,61 @@ private fun AnalogFace(now: LocalDateTime) {
 }
 
 @Composable
-private fun WeatherSummary(state: WeatherState, fahrenheit: Boolean) {
-    Panel(Modifier.fillMaxWidth()) {
-        when (state) {
-            is WeatherState.Ready -> {
-                val w = state.weather
-                val (glyph, label) = weatherGlyph(w.code, w.isDay)
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Text(glyph, fontSize = 30.sp)
-                    Spacer(Modifier.width(12.dp))
-                    Text(
-                        formatTemp(w.tempC, fahrenheit),
-                        style = MaterialTheme.typography.headlineLarge,
-                        fontWeight = FontWeight.SemiBold,
-                    )
-                    Spacer(Modifier.width(12.dp))
-                    Column {
-                        Text(label, style = MaterialTheme.typography.bodyMedium, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                        Text(
-                            "H ${formatTemp(w.highC, fahrenheit)}  L ${formatTemp(w.lowC, fahrenheit)}",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        )
-                    }
-                }
-            }
-            else -> {
-                PanelLabel("Weather")
-                Text(weatherMessage(state), style = MaterialTheme.typography.bodyMedium)
-            }
+private fun WeatherGlance(state: WeatherState, fahrenheit: Boolean) {
+    if (state !is WeatherState.Ready) {
+        PanelLabel("Weather")
+        Text(weatherMessage(state), style = MaterialTheme.typography.bodyLarge, maxLines = 2)
+        return
+    }
+    val w = state.weather
+    val (glyph, label) = weatherGlyph(w.code, w.isDay)
+    Row(verticalAlignment = Alignment.CenterVertically) {
+        Text(glyph, fontSize = 34.sp)
+        Spacer(Modifier.width(12.dp))
+        Text(
+            formatTemp(w.tempC, fahrenheit),
+            style = MaterialTheme.typography.displaySmall,
+            fontWeight = FontWeight.SemiBold,
+        )
+        Spacer(Modifier.width(14.dp))
+        Column {
+            Text(label, style = MaterialTheme.typography.titleMedium, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            Text(
+                "H ${formatTemp(w.highC, fahrenheit)}  L ${formatTemp(w.lowC, fahrenheit)}",
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
         }
     }
 }
 
 fun weatherMessage(state: WeatherState): String = when (state) {
-    WeatherState.Loading -> "Loading…"
-    WeatherState.NeedsLocation -> "Allow location or set a city in settings"
+    WeatherState.Loading -> "Loading weather…"
+    WeatherState.NeedsLocation -> "Allow location, or set a city in Settings"
     is WeatherState.Failed -> state.message
     is WeatherState.Ready -> ""
 }
 
 fun linkMessage(link: LinkState): String = when (link) {
-    LinkState.BluetoothOff -> "Bluetooth is off"
-    LinkState.NoPermission -> "Bluetooth permission needed"
-    LinkState.Scanning -> "Searching for Mac…"
+    LinkState.BluetoothOff -> "Turn on Bluetooth to see your Mac"
+    LinkState.NoPermission -> "Allow Bluetooth in Settings"
+    LinkState.Scanning -> "Looking for your Mac…"
     LinkState.Connecting -> "Connecting…"
     LinkState.Connected -> "Connected"
     LinkState.Demo -> "Demo data"
 }
 
 @Composable
-private fun MacSummary(mac: MacSnapshot) {
-    Panel(Modifier.fillMaxWidth()) {
-        val stats = mac.stats
-        if (stats == null) {
-            PanelLabel("Mac")
-            Text(linkMessage(mac.link), style = MaterialTheme.typography.bodyMedium)
-        } else {
-            Row(horizontalArrangement = Arrangement.spacedBy(16.dp)) {
-                Meter("CPU", stats.cpuPercent, Modifier.weight(1f))
-                Meter("RAM", stats.memPercent, Modifier.weight(1f))
-            }
-        }
+private fun MacGlance(mac: MacSnapshot) {
+    val stats = mac.stats
+    if (stats == null) {
+        PanelLabel("Mac")
+        Text(linkMessage(mac.link), style = MaterialTheme.typography.bodyLarge)
+        return
+    }
+    Row(horizontalArrangement = Arrangement.spacedBy(20.dp)) {
+        Meter("CPU", stats.cpuPercent, Modifier.weight(1f))
+        Meter("Memory", stats.memPercent, Modifier.weight(1f))
     }
 }
 
@@ -238,39 +242,56 @@ private fun Meter(label: String, percent: Int, modifier: Modifier = Modifier) {
         Row(verticalAlignment = Alignment.Bottom) {
             PanelLabel(label)
             Spacer(Modifier.weight(1f))
-            Text("$percent%", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
+            Text("$percent%", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.SemiBold)
         }
         Spacer(Modifier.height(6.dp))
         LinearProgressIndicator(
             progress = { percent / 100f },
             modifier = Modifier.fillMaxWidth().height(6.dp),
+            trackColor = MaterialTheme.colorScheme.surfaceContainerHighest,
+            gapSize = 0.dp,
             drawStopIndicator = {},
         )
     }
 }
 
 @Composable
-private fun ClaudeSummary(mac: MacSnapshot) {
+private fun ClaudeGlance(mac: MacSnapshot) {
     val claude = mac.claude
-    val waiting = (claude?.waiting ?: 0) > 0
-    Panel(
-        Modifier.fillMaxWidth(),
-        color = if (waiting) WaitingColor.copy(alpha = 0.22f) else MaterialTheme.colorScheme.surfaceContainer,
+    val (state, text) = when {
+        claude == null -> ClaudeState.Idle to if (mac.stats == null) "Not connected" else "No status yet"
+        claude.waiting > 0 -> ClaudeState.Waiting to
+            if (claude.waiting == 1) "1 session needs you" else "${claude.waiting} sessions need you"
+        claude.working > 0 -> ClaudeState.Working to
+            if (claude.working == 1) "1 session working" else "${claude.working} sessions working"
+        claude.total > 0 -> ClaudeState.Idle to "${claude.total} idle"
+        else -> ClaudeState.Idle to "No sessions"
+    }
+    // The one colored fill on this page: only when Claude is waiting on you.
+    val waiting = state == ClaudeState.Waiting
+    Row(
+        Modifier
+            .fillMaxWidth()
+            .then(
+                if (waiting) Modifier.background(WaitingColor.copy(alpha = 0.18f), RoundedCornerShape(16.dp))
+                else Modifier
+            )
+            .padding(horizontal = if (waiting) 12.dp else 0.dp, vertical = if (waiting) 8.dp else 0.dp),
+        verticalAlignment = Alignment.CenterVertically,
     ) {
-        PanelLabel("Claude")
-        Spacer(Modifier.height(4.dp))
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            val (state, text) = when {
-                claude == null -> ClaudeState.Idle to "No data"
-                claude.waiting > 0 -> ClaudeState.Waiting to
-                    if (claude.waiting == 1) "1 session needs you" else "${claude.waiting} sessions need you"
-                claude.working > 0 -> ClaudeState.Working to "${claude.working} working"
-                claude.total > 0 -> ClaudeState.Idle to "${claude.total} idle"
-                else -> ClaudeState.Idle to "No sessions"
+        Column {
+            PanelLabel("Claude Code", if (waiting) WaitingColor else MaterialTheme.colorScheme.onSurfaceVariant)
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Dot(claudeColor(state))
+                Spacer(Modifier.width(10.dp))
+                Text(
+                    text,
+                    style = MaterialTheme.typography.titleLarge,
+                    fontWeight = FontWeight.SemiBold,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
             }
-            Dot(claudeColor(state))
-            Spacer(Modifier.width(10.dp))
-            Text(text, style = MaterialTheme.typography.titleMedium, maxLines = 1, overflow = TextOverflow.Ellipsis)
         }
     }
 }

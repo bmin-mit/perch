@@ -54,21 +54,18 @@ fun rememberNow(): State<LocalDateTime> = produceState(LocalDateTime.now()) {
 @Composable
 fun Panel(
     modifier: Modifier = Modifier,
-    color: Color = MaterialTheme.colorScheme.surfaceContainer,
+    color: Color = MaterialTheme.colorScheme.surfaceContainerLow,
     content: @Composable ColumnScope.() -> Unit,
 ) {
-    Surface(modifier = modifier, shape = RoundedCornerShape(28.dp), color = color) {
-        Column(Modifier.padding(horizontal = 20.dp, vertical = 16.dp), content = content)
+    Surface(modifier = modifier, shape = RoundedCornerShape(24.dp), color = color) {
+        Column(Modifier.padding(horizontal = 18.dp, vertical = 14.dp), content = content)
     }
 }
 
+/** Small caption above a value. 14sp so it still reads from across a desk. */
 @Composable
-fun PanelLabel(text: String) {
-    Text(
-        text.uppercase(Locale.getDefault()),
-        style = MaterialTheme.typography.labelMedium,
-        color = MaterialTheme.colorScheme.onSurfaceVariant,
-    )
+fun PanelLabel(text: String, color: Color = MaterialTheme.colorScheme.onSurfaceVariant) {
+    Text(text, style = MaterialTheme.typography.labelLarge, color = color, maxLines = 1)
 }
 
 @Composable

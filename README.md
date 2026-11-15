@@ -20,6 +20,7 @@ cd android && ./gradlew :app:installDebug
   token usage, context size and recent tool calls. Tap a session to pin it for two minutes.
 - To show it automatically while charging: ⚙ → *Screen saver settings* → pick **Perch**
   (on Samsung: Settings → Display → Screen saver).
+- In a dark room the whole display turns dim red (toggle *Dim red in the dark* in ⚙).
 - Weather comes from [Open-Meteo](https://open-meteo.com) (no key) using coarse location, or a city set in ⚙.
 - On an emulator the Mac page uses simulated data (toggle *Demo Mac data* in ⚙).
 
