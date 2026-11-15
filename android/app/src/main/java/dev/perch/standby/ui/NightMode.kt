@@ -14,6 +14,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asComposeRenderEffect
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.platform.LocalContext
@@ -50,20 +51,38 @@ fun rememberIsDarkRoom(enabled: Boolean): Boolean {
     return dark
 }
 
-// Luminance into the red channel only, at reduced strength: everything, emoji included,
-// becomes a dim red that is easy on dark-adapted eyes.
-private val nightEffect = RenderEffect.createColorFilterEffect(
+/** Night mode colours. Red preserves dark adaptation best; the others are for comfort. */
+enum class NightTint(val label: String, val color: Color) {
+    Red("Red", Color(0xFFE5483D)),
+    Amber("Amber", Color(0xFFE8A33A)),
+    Green("Green", Color(0xFF5FBF6E)),
+    White("Soft white", Color(0xFFB8B4AC)),
+    Blue("Blue", Color(0xFF6E9BE8)),
+    ;
+
+    companion object {
+        fun of(index: Int) = entries.getOrElse(index) { Red }
+    }
+}
+
+/**
+ * Maps each pixel's luminance onto a single tint, so the whole screen (icons and graphs
+ * included) becomes one dim colour that is easy on dark-adapted eyes.
+ */
+private fun tintEffect(tint: Color) = RenderEffect.createColorFilterEffect(
     ColorMatrixColorFilter(
         ColorMatrix(
             floatArrayOf(
-                0.30f, 0.59f, 0.11f, 0f, 0f,
-                0f, 0f, 0f, 0f, 0f,
-                0f, 0f, 0f, 0f, 0f,
+                0.30f * tint.red, 0.59f * tint.red, 0.11f * tint.red, 0f, 0f,
+                0.30f * tint.green, 0.59f * tint.green, 0.11f * tint.green, 0f, 0f,
+                0.30f * tint.blue, 0.59f * tint.blue, 0.11f * tint.blue, 0f, 0f,
                 0f, 0f, 0f, 1f, 0f,
             )
-        ).apply { postConcat(ColorMatrix().apply { setScale(0.8f, 1f, 1f, 1f) }) }
+        )
     )
 ).asComposeRenderEffect()
 
-fun Modifier.nightFilter(on: Boolean): Modifier =
-    if (on) graphicsLayer { renderEffect = nightEffect } else this
+private val effects = NightTint.entries.associateWith { tintEffect(it.color) }
+
+fun Modifier.nightFilter(on: Boolean, tint: NightTint): Modifier =
+    if (on) graphicsLayer { renderEffect = effects.getValue(tint) } else this

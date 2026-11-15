@@ -71,7 +71,7 @@ fun StandbyScreen(graph: AppGraph, onRequestPermissions: (() -> Unit)? = null) {
                 Modifier
                     .fillMaxSize()
                     .background(Color.Black)
-                    .nightFilter(darkRoom && !showSettings)
+                    .nightFilter(darkRoom && !showSettings, NightTint.of(settings.nightTint))
                     .windowInsetsPadding(WindowInsets.displayCutout)
             ) {
                 // Nudge everything a few pixels each minute so static content can't burn in.

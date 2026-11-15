@@ -9,10 +9,20 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.Typography
 import androidx.compose.material3.dynamicDarkColorScheme
+import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.text.font.Font
+import androidx.compose.ui.text.font.FontFamily
+import androidx.compose.ui.text.font.FontVariation
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.Dp
+import dev.perch.standby.R
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.State
 import androidx.compose.runtime.produceState
@@ -34,12 +44,33 @@ import kotlin.math.roundToInt
 
 val WaitingColor = Color(0xFFFFB95C)
 
+private fun googleSans(weight: Int) = Font(
+    R.font.google_sans,
+    weight = FontWeight(weight),
+    variationSettings = FontVariation.Settings(FontVariation.weight(weight)),
+)
+
+/** Google Sans, bundled (a variable font covering 400–700) so it works offline in the screensaver. */
+val GoogleSans = FontFamily(googleSans(400), googleSans(500), googleSans(600), googleSans(700))
+
+private val PerchTypography = Typography().let { t ->
+    fun TextStyle.sans() = copy(fontFamily = GoogleSans)
+    t.copy(
+        displayLarge = t.displayLarge.sans(), displayMedium = t.displayMedium.sans(),
+        displaySmall = t.displaySmall.sans(), headlineLarge = t.headlineLarge.sans(),
+        headlineMedium = t.headlineMedium.sans(), headlineSmall = t.headlineSmall.sans(),
+        titleLarge = t.titleLarge.sans(), titleMedium = t.titleMedium.sans(), titleSmall = t.titleSmall.sans(),
+        bodyLarge = t.bodyLarge.sans(), bodyMedium = t.bodyMedium.sans(), bodySmall = t.bodySmall.sans(),
+        labelLarge = t.labelLarge.sans(), labelMedium = t.labelMedium.sans(), labelSmall = t.labelSmall.sans(),
+    )
+}
+
 @Composable
 fun PerchTheme(content: @Composable () -> Unit) {
     // Material You colours from the wallpaper, on a true-black base for OLED.
     val scheme = dynamicDarkColorScheme(LocalContext.current)
         .copy(background = Color.Black, surface = Color.Black)
-    MaterialTheme(colorScheme = scheme, content = content)
+    MaterialTheme(colorScheme = scheme, typography = PerchTypography, content = content)
 }
 
 /** Current time, updated on each second boundary. */
@@ -80,30 +111,6 @@ fun claudeColor(state: ClaudeState): Color = when (state) {
     ClaudeState.Idle -> MaterialTheme.colorScheme.outline
 }
 
-/** Filled line chart of recent samples. [max] of null scales to the largest sample. */
-@Composable
-fun Sparkline(values: List<Float>, color: Color, modifier: Modifier = Modifier, max: Float? = null) {
-    Canvas(modifier) {
-        if (values.size < 2) return@Canvas
-        val top = (max ?: values.max()).coerceAtLeast(1f)
-        val stepX = size.width / (values.size - 1)
-        fun y(v: Float) = size.height - (v / top).coerceIn(0f, 1f) * (size.height - 4f) - 2f
-        val line = Path()
-        values.forEachIndexed { i, v ->
-            if (i == 0) line.moveTo(0f, y(v)) else line.lineTo(i * stepX, y(v))
-        }
-        val fill = Path().apply {
-            addPath(line)
-            lineTo(size.width, size.height)
-            lineTo(0f, size.height)
-            close()
-        }
-        drawPath(fill, Brush.verticalGradient(listOf(color.copy(alpha = 0.35f), Color.Transparent)))
-        drawPath(line, color, style = Stroke(width = 2.dp.toPx(), cap = StrokeCap.Round, join = StrokeJoin.Round))
-        drawCircle(color, 3.dp.toPx(), Offset(size.width, y(values.last())))
-    }
-}
-
 fun formatRate(bytesPerSec: Long): String = when {
     bytesPerSec >= 1_000_000 -> String.format(Locale.US, "%.1f MB/s", bytesPerSec / 1e6)
     bytesPerSec >= 1_000 -> String.format(Locale.US, "%d KB/s", bytesPerSec / 1000)
@@ -115,18 +122,45 @@ fun formatGb(mb: Long): String = String.format(Locale.US, "%.1f", mb / 1024.0)
 fun formatTemp(celsius: Double, fahrenheit: Boolean): String =
     "${(if (fahrenheit) celsius * 9 / 5 + 32 else celsius).roundToInt()}°"
 
-/** WMO weather code to an emoji glyph and a short description. */
-fun weatherGlyph(code: Int, isDay: Boolean): Pair<String, String> = when (code) {
-    0 -> (if (isDay) "☀️" else "🌙") to "Clear"
-    1 -> (if (isDay) "🌤️" else "🌙") to "Mostly clear"
-    2 -> (if (isDay) "⛅" else "☁️") to "Partly cloudy"
-    3 -> "☁️" to "Overcast"
-    45, 48 -> "🌫️" to "Fog"
-    51, 53, 55, 56, 57 -> "🌦️" to "Drizzle"
-    61, 63, 65, 66, 67 -> "🌧️" to "Rain"
-    71, 73, 75, 77 -> "❄️" to "Snow"
-    80, 81, 82 -> "🌧️" to "Showers"
-    85, 86 -> "🌨️" to "Snow showers"
-    95, 96, 99 -> "⛈️" to "Thunderstorm"
-    else -> "☁️" to "Cloudy"
+private enum class Sky { Sun, Moon, Cloud, Rain, Snow, Storm }
+
+private data class Condition(val icon: Int, val label: String, val sky: Sky)
+
+/** WMO weather code to a Lucide line icon and a short description. */
+private fun condition(code: Int, isDay: Boolean): Condition = when (code) {
+    0 -> if (isDay) Condition(R.drawable.wx_sun, "Clear", Sky.Sun) else Condition(R.drawable.wx_moon, "Clear", Sky.Moon)
+    1, 2 -> Condition(
+        if (isDay) R.drawable.wx_cloud_sun else R.drawable.wx_cloud_moon,
+        if (code == 1) "Mostly clear" else "Partly cloudy",
+        if (isDay) Sky.Sun else Sky.Moon,
+    )
+    3 -> Condition(R.drawable.wx_cloudy, "Overcast", Sky.Cloud)
+    45, 48 -> Condition(R.drawable.wx_cloud_fog, "Fog", Sky.Cloud)
+    51, 53, 55, 56, 57 -> Condition(R.drawable.wx_cloud_drizzle, "Drizzle", Sky.Rain)
+    61, 66 -> Condition(R.drawable.wx_cloud_rain, "Light rain", Sky.Rain)
+    63, 65, 67 -> Condition(R.drawable.wx_cloud_rain, "Rain", Sky.Rain)
+    71, 85 -> Condition(R.drawable.wx_cloud_snow, "Light snow", Sky.Snow)
+    73, 75, 77, 86 -> Condition(R.drawable.wx_snowflake, "Snow", Sky.Snow)
+    80, 81, 82 -> Condition(
+        if (isDay) R.drawable.wx_cloud_sun_rain else R.drawable.wx_cloud_moon_rain, "Showers", Sky.Rain,
+    )
+    95, 96, 99 -> Condition(R.drawable.wx_cloud_lightning, "Thunderstorm", Sky.Storm)
+    else -> Condition(R.drawable.wx_cloud, "Cloudy", Sky.Cloud)
+}
+
+fun weatherLabel(code: Int, isDay: Boolean): String = condition(code, isDay).label
+
+/** A single-weight line icon, softly tinted by the kind of sky. */
+@Composable
+fun WeatherIcon(code: Int, isDay: Boolean, size: Dp, modifier: Modifier = Modifier) {
+    val c = condition(code, isDay)
+    val tint = when (c.sky) {
+        Sky.Sun -> Color(0xFFFFD27A)
+        Sky.Moon -> Color(0xFFC9D2FF)
+        Sky.Rain -> Color(0xFF94C8FF)
+        Sky.Snow -> Color(0xFFE6F0FF)
+        Sky.Storm -> Color(0xFFC6AEFF)
+        Sky.Cloud -> MaterialTheme.colorScheme.onSurfaceVariant
+    }
+    Icon(painterResource(c.icon), contentDescription = c.label, tint = tint, modifier = modifier.size(size))
 }

@@ -185,9 +185,9 @@ private fun WeatherGlance(state: WeatherState, fahrenheit: Boolean) {
         return
     }
     val w = state.weather
-    val (glyph, label) = weatherGlyph(w.code, w.isDay)
+    val label = weatherLabel(w.code, w.isDay)
     Row(verticalAlignment = Alignment.CenterVertically) {
-        Text(glyph, fontSize = 34.sp)
+        WeatherIcon(w.code, w.isDay, 40.dp)
         Spacer(Modifier.width(12.dp))
         Text(
             formatTemp(w.tempC, fahrenheit),

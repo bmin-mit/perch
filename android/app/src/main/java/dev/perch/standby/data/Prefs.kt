@@ -16,6 +16,8 @@ data class Settings(
     val clockFace: Int = 0,
     /** Switch to a dim red, monochrome look when the room is dark. */
     val autoNight: Boolean = true,
+    /** Index into NightTint. */
+    val nightTint: Int = 0,
 )
 
 class Prefs(context: Context) {
@@ -34,6 +36,7 @@ class Prefs(context: Context) {
             .putString("city", next.city)
             .putInt("clockFace", next.clockFace)
             .putBoolean("autoNight", next.autoNight)
+            .putInt("nightTint", next.nightTint)
             .apply()
     }
 
@@ -45,6 +48,7 @@ class Prefs(context: Context) {
         city = sp.getString("city", "") ?: "",
         clockFace = sp.getInt("clockFace", 0),
         autoNight = sp.getBoolean("autoNight", true),
+        nightTint = sp.getInt("nightTint", 0),
     )
 
     private fun isEmulator() =

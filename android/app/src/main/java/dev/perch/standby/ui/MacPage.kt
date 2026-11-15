@@ -69,8 +69,14 @@ fun MacPage(mac: MacSnapshot) {
             return
         }
         Row(Modifier.weight(1f), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-            Tile("CPU", "${stats.cpuPercent}%", null, Modifier.weight(1f)) {
-                Sparkline(mac.cpuHistory, MaterialTheme.colorScheme.primary, Modifier.fillMaxSize(), 100f)
+            Tile("CPU", "${stats.cpuPercent}%", "last 60 seconds", Modifier.weight(1f)) {
+                TimeChart(
+                    series = listOf(Series(mac.cpuHistory, MaterialTheme.colorScheme.primary)),
+                    yMax = 100f,
+                    yTicks = listOf(0f, 50f, 100f),
+                    yLabel = { "${it.toInt()}%" },
+                    modifier = Modifier.fillMaxSize(),
+                )
             }
             Tile(
                 label = "Memory",
@@ -105,9 +111,21 @@ fun MacPage(mac: MacSnapshot) {
                 label = "Network",
                 value = "↓ ${formatRate(stats.downBytesPerSec)}",
                 caption = "↑ ${formatRate(stats.upBytesPerSec)} up",
+                captionColor = MaterialTheme.colorScheme.tertiary,
                 modifier = Modifier.weight(1f),
             ) {
-                Sparkline(mac.downHistory, MaterialTheme.colorScheme.secondary, Modifier.fillMaxSize())
+                // Both directions share one scale, rounded up to a tidy number.
+                val peak = niceCeil((mac.downHistory + mac.upHistory).maxOrNull() ?: 0f, 10_000f)
+                TimeChart(
+                    series = listOf(
+                        Series(mac.downHistory, MaterialTheme.colorScheme.secondary),
+                        Series(mac.upHistory, MaterialTheme.colorScheme.tertiary, filled = false),
+                    ),
+                    yMax = peak,
+                    yTicks = listOf(0f, peak / 2, peak),
+                    yLabel = { if (it == 0f) "0" else formatRate(it.toLong()).removeSuffix("/s") },
+                    modifier = Modifier.fillMaxSize(),
+                )
             }
         }
     }
@@ -132,6 +150,7 @@ private fun Tile(
     value: String,
     caption: String?,
     modifier: Modifier = Modifier,
+    captionColor: Color = MaterialTheme.colorScheme.onSurfaceVariant,
     color: Color = MaterialTheme.colorScheme.surfaceContainerLow,
     content: @Composable ColumnScope.() -> Unit,
 ) {
@@ -146,7 +165,7 @@ private fun Tile(
         Text(
             caption ?: " ",
             style = MaterialTheme.typography.bodyMedium,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            color = captionColor,
             maxLines = 1,
             overflow = TextOverflow.Ellipsis,
         )

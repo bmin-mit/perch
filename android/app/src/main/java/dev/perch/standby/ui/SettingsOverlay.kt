@@ -3,6 +3,16 @@ package dev.perch.standby.ui
 import android.content.Intent
 import android.provider.Settings as SystemSettings
 import androidx.activity.compose.BackHandler
+import androidx.compose.foundation.background
+import androidx.compose.foundation.border
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.selection.selectable
+import androidx.compose.foundation.selection.selectableGroup
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -65,7 +75,10 @@ fun SettingsOverlay(
                 Text("Settings", style = MaterialTheme.typography.headlineSmall)
                 SwitchRow("24-hour clock", settings.use24h) { v -> onChange { it.copy(use24h = v) } }
                 SwitchRow("Fahrenheit", settings.fahrenheit) { v -> onChange { it.copy(fahrenheit = v) } }
-                SwitchRow("Dim red in the dark", settings.autoNight) { v -> onChange { it.copy(autoNight = v) } }
+                SwitchRow("Night mode in the dark", settings.autoNight) { v -> onChange { it.copy(autoNight = v) } }
+                if (settings.autoNight) {
+                    TintPicker(NightTint.of(settings.nightTint)) { t -> onChange { it.copy(nightTint = t.ordinal) } }
+                }
                 SwitchRow("Demo Mac data (no Bluetooth)", settings.demoMac) { v -> onChange { it.copy(demoMac = v) } }
             }
             Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(10.dp)) {
@@ -89,6 +102,41 @@ fun SettingsOverlay(
                         context.startActivity(Intent(SystemSettings.ACTION_DREAM_SETTINGS))
                     }) { Text("Screen saver settings") }
                     FilledTonalButton(onClick = { applyCity(); onClose() }) { Text("Done") }
+                }
+            }
+        }
+    }
+}
+
+/** A row of colour swatches; each is a 48dp target with its name read out by TalkBack. */
+@Composable
+private fun TintPicker(selected: NightTint, onSelect: (NightTint) -> Unit) {
+    Column(Modifier.padding(bottom = 6.dp)) {
+        Text(
+            "Night colour: ${selected.label}",
+            style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+        Row(Modifier.selectableGroup()) {
+            NightTint.entries.forEach { tint ->
+                val isSelected = tint == selected
+                Box(
+                    Modifier
+                        .size(48.dp)
+                        .selectable(isSelected, role = Role.RadioButton, onClick = { onSelect(tint) })
+                        .semantics { contentDescription = tint.label },
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Box(
+                        Modifier
+                            .size(30.dp)
+                            .then(
+                                if (isSelected) Modifier.border(2.dp, MaterialTheme.colorScheme.onSurface, CircleShape)
+                                else Modifier
+                            )
+                            .padding(if (isSelected) 4.dp else 0.dp)
+                            .background(tint.color, CircleShape)
+                    )
                 }
             }
         }

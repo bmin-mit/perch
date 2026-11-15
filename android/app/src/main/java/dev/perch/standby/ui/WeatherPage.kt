@@ -8,6 +8,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -36,14 +37,14 @@ fun WeatherPage(state: WeatherState, settings: Settings) {
     }
     val w = state.weather
     val f = settings.fahrenheit
-    val (glyph, label) = weatherGlyph(w.code, w.isDay)
+    val label = weatherLabel(w.code, w.isDay)
     Column(Modifier.fillMaxSize(), verticalArrangement = Arrangement.spacedBy(16.dp)) {
         Row(
             Modifier.weight(1f).fillMaxWidth(),
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.Center,
         ) {
-            Text(glyph, fontSize = 88.sp)
+            WeatherIcon(w.code, w.isDay, 104.dp)
             Spacer(Modifier.width(24.dp))
             Text(
                 formatTemp(w.tempC, f),
@@ -79,7 +80,7 @@ fun WeatherPage(state: WeatherState, settings: Settings) {
                             style = MaterialTheme.typography.labelLarge,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
-                        Text(weatherGlyph(h.code, h.isDay).first, fontSize = 26.sp)
+                        WeatherIcon(h.code, h.isDay, 30.dp, Modifier.padding(vertical = 6.dp))
                         Text(
                             formatTemp(h.tempC, f),
                             style = MaterialTheme.typography.titleMedium,
