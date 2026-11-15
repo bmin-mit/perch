@@ -12,6 +12,9 @@ typedef void (*RegisterFn)(dispatch_queue_t);
 static GetInfoFn getInfo;
 static GetPidFn getPid;
 static NSString *last;
+// Last position sent, so a jump (repeat, seek, skip back) can be detected.
+static double lastPos = -1, lastAt = 0;
+static BOOL lastPlaying = NO;
 
 static id stringFor(NSDictionary *info, NSString *key) {
     id v = info[key];
@@ -49,12 +52,21 @@ static void emit(void) {
             }
             NSData *data = [NSJSONSerialization dataWithJSONObject:out options:NSJSONWritingSortedKeys error:nil];
             NSString *line = [[NSString alloc] initWithData:data encoding:NSUTF8StringEncoding];
-            // The position moves while playing, so compare without it to avoid a line every poll.
+            // The position moves while playing, so compare without it to avoid a line every poll...
             NSMutableDictionary *key = [out mutableCopy];
             [key removeObjectsForKeys:@[ @"pos", @"at" ]];
             NSString *keyString = [key description];
-            if (![keyString isEqualToString:last]) {
+            // ...but do send one when the position jumps away from where the phone would have
+            // extrapolated it: a repeated track restarts at 0 with the same title, as does a seek.
+            double now = [NSDate date].timeIntervalSince1970;
+            double pos = out[@"pos"] ? [out[@"pos"] doubleValue] : -1;
+            double expected = lastPos + (lastPlaying ? now - lastAt : 0);
+            BOOL jumped = pos >= 0 && lastPos >= 0 && fabs(pos - expected) > 3;
+            if (![keyString isEqualToString:last] || jumped) {
                 last = keyString;
+                lastPos = pos;
+                lastAt = now;
+                lastPlaying = [out[@"playing"] boolValue];
                 printf("%s\n", line.UTF8String);
                 fflush(stdout);
             }
@@ -83,7 +95,8 @@ void perch_media_stream(void) {
                                                            queue:nil
                                                       usingBlock:^(NSNotification *n) { emit(); }];
     }
-    [NSTimer scheduledTimerWithTimeInterval:5 repeats:YES block:^(NSTimer *t) { emit(); }];
+    // Poll as well: a repeat or seek doesn't always post a change notification.
+    [NSTimer scheduledTimerWithTimeInterval:2 repeats:YES block:^(NSTimer *t) { emit(); }];
     emit();
     CFRunLoopRun();
 }

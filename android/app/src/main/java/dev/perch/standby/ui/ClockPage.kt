@@ -37,7 +37,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.material3.Icon
 import androidx.compose.ui.res.painterResource
 import dev.perch.standby.R
-import dev.perch.standby.data.BatteryInfo
+import androidx.compose.ui.graphics.Color
 import dev.perch.standby.data.NowPlaying
 import dev.perch.standby.data.ClaudeState
 import dev.perch.standby.data.LinkState
@@ -241,46 +241,21 @@ private fun MacGlance(mac: MacSnapshot) {
     }
     Row(horizontalArrangement = Arrangement.spacedBy(18.dp), verticalAlignment = Alignment.Bottom) {
         Meter("CPU", stats.cpuPercent, Modifier.weight(1f))
-        Meter(if (mac.battery != null) "RAM" else "Memory", stats.memPercent, Modifier.weight(1f))
-        mac.battery?.let { BatteryGlance(it) }
-    }
-}
-
-@Composable
-private fun BatteryGlance(b: BatteryInfo) {
-    val icon = when {
-        b.charging -> R.drawable.ic_battery_charging
-        b.percent >= 70 -> R.drawable.ic_battery_full
-        b.percent >= 35 -> R.drawable.ic_battery_medium
-        else -> R.drawable.ic_battery_low
-    }
-    val tint = when {
-        b.charging -> MaterialTheme.colorScheme.primary
-        b.percent <= 20 -> MaterialTheme.colorScheme.error
-        else -> MaterialTheme.colorScheme.onSurfaceVariant
-    }
-    Column(horizontalAlignment = Alignment.End) {
-        PanelLabel(
-            when {
-                b.charging && b.minutes != null -> "full in ${duration(b.minutes * 60L)}"
-                b.charging -> "charging"
-                !b.onAc && b.minutes != null -> "${duration(b.minutes * 60L)} left"
-                b.onAc -> "plugged in"
-                else -> "battery"
+        Meter("RAM", stats.memPercent, Modifier.weight(1f))
+        mac.battery?.let { b ->
+            // Normal colour on power; yellow on battery; red on battery below 20%.
+            val color = when {
+                b.onAc -> MaterialTheme.colorScheme.primary
+                b.percent < 20 -> BatteryRed
+                else -> BatteryYellow
             }
-        )
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            Icon(
-                painterResource(icon),
-                contentDescription = if (b.charging) "Mac battery, charging" else "Mac battery",
-                tint = tint,
-                modifier = Modifier.size(24.dp),
-            )
-            Spacer(Modifier.width(6.dp))
-            Text("${b.percent}%", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.SemiBold)
+            Meter("BAT", b.percent, Modifier.weight(1f), color)
         }
     }
 }
+
+private val BatteryYellow = Color(0xFFFFD54F)
+private val BatteryRed = Color(0xFFFF5A4E)
 
 /** What's playing on the Mac: state icon, title and artist, and a thin progress line. */
 @Composable
@@ -347,7 +322,12 @@ private fun NowPlayingLine(m: NowPlaying, nowSec: Long) {
 private fun mmss(seconds: Long) = "%d:%02d".format(seconds / 60, seconds % 60)
 
 @Composable
-private fun Meter(label: String, percent: Int, modifier: Modifier = Modifier) {
+private fun Meter(
+    label: String,
+    percent: Int,
+    modifier: Modifier = Modifier,
+    color: Color = MaterialTheme.colorScheme.primary,
+) {
     Column(modifier) {
         Row(verticalAlignment = Alignment.Bottom) {
             PanelLabel(label)
@@ -364,6 +344,7 @@ private fun Meter(label: String, percent: Int, modifier: Modifier = Modifier) {
         LinearProgressIndicator(
             progress = { percent / 100f },
             modifier = Modifier.fillMaxWidth().height(6.dp),
+            color = color,
             trackColor = MaterialTheme.colorScheme.surfaceContainerHighest,
             gapSize = 0.dp,
             drawStopIndicator = {},

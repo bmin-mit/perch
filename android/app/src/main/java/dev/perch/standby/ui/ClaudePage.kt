@@ -17,7 +17,9 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.verticalScroll
+import androidx.compose.material3.LinearProgressIndicator
+import androidx.compose.ui.draw.clipToBounds
+import kotlin.math.roundToInt
 import androidx.compose.foundation.layout.size
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
@@ -196,7 +198,9 @@ private fun SessionDetailPanel(s: SessionDetail, nowSec: Long, use24h: Boolean, 
         Spacer(Modifier.height(10.dp))
 
         Row(Modifier.weight(1f), horizontalArrangement = Arrangement.spacedBy(20.dp)) {
-            Column(Modifier.weight(1.25f).verticalScroll(rememberScrollState())) {
+            Column(Modifier.weight(1.25f).fillMaxHeight()) {
+              // Top: what it's doing. Fixed region that clips, so the rows below never move.
+              Column(Modifier.weight(1f).clipToBounds()) {
                 // What it's doing right now.
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Dot(claudeColor(s.state))
@@ -234,26 +238,20 @@ private fun SessionDetailPanel(s: SessionDetail, nowSec: Long, use24h: Boolean, 
                         "“$it”",
                         style = MaterialTheme.typography.bodyLarge,
                         fontStyle = FontStyle.Italic,
-                        maxLines = 3,
+                        maxLines = 2,
                         overflow = TextOverflow.Ellipsis,
                     )
                 }
-                Spacer(Modifier.height(14.dp))
-                Row(horizontalArrangement = Arrangement.spacedBy(22.dp)) {
-                    Stat("Session", duration(nowSec - s.started))
-                    Stat("Prompts", s.prompts.toString())
-                    Stat("Tools", s.tools.toString())
-                    Stat("Context", tokens(s.contextTokens))
-                }
-                Spacer(Modifier.height(8.dp))
-                Text(
-                    "${tokens(s.outputTokens)} out · ${tokens(s.inputTokens + s.cacheWriteTokens)} in · " +
-                        "${tokens(s.cacheReadTokens)} cached",
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                )
+              }
+              // Bottom, pinned: token mix, then the session counters.
+              TokenBars(s)
+              Spacer(Modifier.height(12.dp))
+              Row(horizontalArrangement = Arrangement.spacedBy(22.dp)) {
+                  Stat("Session", duration(nowSec - s.started))
+                  Stat("Prompts", s.prompts.toString())
+                  Stat("Tools", s.tools.toString())
+                  Stat("Context", tokens(s.contextTokens))
+              }
             }
             Column(Modifier.weight(1f)) {
                 PanelLabel("Recent tools")
@@ -287,6 +285,56 @@ private fun SessionDetailPanel(s: SessionDetail, nowSec: Long, use24h: Boolean, 
                 }
             }
         }
+    }
+}
+
+/** Each token kind as a share of everything this session processed, with the raw count below. */
+@Composable
+private fun TokenBars(s: SessionDetail) {
+    val input = s.inputTokens + s.cacheWriteTokens
+    val total = (s.outputTokens + input + s.cacheReadTokens).coerceAtLeast(1)
+    Row(horizontalArrangement = Arrangement.spacedBy(14.dp)) {
+        TokenBar("Out", s.outputTokens, total, MaterialTheme.colorScheme.primary, Modifier.weight(1f))
+        TokenBar("In", input, total, MaterialTheme.colorScheme.tertiary, Modifier.weight(1f))
+        TokenBar("Cached", s.cacheReadTokens, total, MaterialTheme.colorScheme.secondary, Modifier.weight(1f))
+    }
+}
+
+@Composable
+private fun TokenBar(label: String, count: Long, total: Long, color: Color, modifier: Modifier) {
+    val share = count.toFloat() / total
+    Column(modifier) {
+        Row(verticalAlignment = Alignment.Bottom) {
+            PanelLabel(label)
+            Spacer(Modifier.weight(1f))
+            Text(
+                when {
+                    count == 0L -> "0%"
+                    share < 0.01f -> "<1%"
+                    else -> "${(share * 100).roundToInt()}%"
+                },
+                style = MaterialTheme.typography.labelLarge,
+                fontWeight = FontWeight.SemiBold,
+                maxLines = 1,
+            )
+        }
+        Spacer(Modifier.height(4.dp))
+        LinearProgressIndicator(
+            // A sliver stays visible for small but non-zero shares.
+            progress = { if (count > 0) share.coerceAtLeast(0.02f) else 0f },
+            modifier = Modifier.fillMaxWidth().height(5.dp),
+            color = color,
+            trackColor = MaterialTheme.colorScheme.surfaceContainerHighest,
+            gapSize = 0.dp,
+            drawStopIndicator = {},
+        )
+        Spacer(Modifier.height(3.dp))
+        Text(
+            "${tokens(count)} tokens",
+            style = MaterialTheme.typography.labelMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            maxLines = 1,
+        )
     }
 }
 

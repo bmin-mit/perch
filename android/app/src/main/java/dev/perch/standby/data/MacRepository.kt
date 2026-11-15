@@ -134,7 +134,13 @@ class MacRepository(
             )
             if (tick % 8 == 0) {
                 val frame = frames[(tick / 8) % frames.size]
-                _state.update { it.copy(claude = frame, sessions = demoSessions(frame, started)) }
+                // Cycle the battery through plugged in, on battery, and low, to show each colour.
+                val battery = when ((tick / 8) % 3) {
+                    0 -> BatteryInfo(percent = 76, charging = true, onAc = true, minutes = 38)
+                    1 -> BatteryInfo(percent = 54, charging = false, onAc = false, minutes = 190)
+                    else -> BatteryInfo(percent = 14, charging = false, onAc = false, minutes = 25)
+                }
+                _state.update { it.copy(claude = frame, sessions = demoSessions(frame, started), battery = battery) }
             }
             tick++
             delay(1000)

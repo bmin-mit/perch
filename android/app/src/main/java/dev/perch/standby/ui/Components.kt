@@ -5,6 +5,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.CircleShape
@@ -86,10 +87,11 @@ fun rememberNow(): State<LocalDateTime> = produceState(LocalDateTime.now()) {
 fun Panel(
     modifier: Modifier = Modifier,
     color: Color = MaterialTheme.colorScheme.surfaceContainerLow,
+    padding: PaddingValues = PaddingValues(horizontal = 18.dp, vertical = 14.dp),
     content: @Composable ColumnScope.() -> Unit,
 ) {
     Surface(modifier = modifier, shape = RoundedCornerShape(24.dp), color = color) {
-        Column(Modifier.padding(horizontal = 18.dp, vertical = 14.dp), content = content)
+        Column(Modifier.padding(padding), content = content)
     }
 }
 
