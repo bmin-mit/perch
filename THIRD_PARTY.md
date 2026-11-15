@@ -8,7 +8,7 @@ Licensed under the SIL Open Font License, Version 1.1: https://openfontlicense.o
 
 ## Lucide icons
 
-`android/app/src/main/res/drawable/wx_*.xml` — weather icons converted from Lucide
+`android/app/src/main/res/drawable/wx_*.xml` and `ic_*.xml` (except `ic_launcher.xml`) — icons converted from Lucide
 (https://lucide.dev), lucide-static 1.61.0.
 
 ISC License
@@ -26,7 +26,7 @@ WHATSOEVER RESULTING FROM LOSS OF USE, DATA OR PROFITS, WHETHER IN AN ACTION OF 
 NEGLIGENCE OR OTHER TORTIOUS ACTION, ARISING OUT OF OR IN CONNECTION WITH THE USE OR PERFORMANCE OF
 THIS SOFTWARE.
 
-`wx_moon.xml` is derived from the Feather project:
+`wx_moon.xml`, `wx_navigation_2.xml` and `ic_music.xml` are derived from the Feather project:
 
 The MIT License (MIT)
 

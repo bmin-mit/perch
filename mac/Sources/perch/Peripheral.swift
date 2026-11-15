@@ -11,14 +11,10 @@ final class Peripheral: NSObject, CBPeripheralManagerDelegate {
     private let infoChar = CBMutableCharacteristic(
         type: PerchProtocol.info, properties: [.read], value: nil, permissions: [.readable])
 
-    private let sessionsChar = CBMutableCharacteristic(
-        type: PerchProtocol.sessions, properties: [.notifyEncryptionRequired], value: nil,
-        permissions: [.readEncryptionRequired])
-
-    private var sessionsBody = Data()
-    private var sessionsQueue: [Data] = []
-    private var sessionsSeq: UInt16 = 0
-    private var sessionSubscribers = 0
+    /// Encrypted, chunked JSON channels (subscribing requires a paired phone).
+    private let sessionsChannel = JSONChannel(PerchProtocol.sessions)
+    private let extrasChannel = JSONChannel(PerchProtocol.extras)
+    private var channels: [JSONChannel] { [sessionsChannel, extrasChannel] }
 
     private var statsValue = Data()
     private var claudeValue = Data()
@@ -55,27 +51,38 @@ final class Peripheral: NSObject, CBPeripheralManagerDelegate {
 
     /// Sends full session details when they change (or when `force` is set, e.g. a new subscriber).
     func update(details body: [[String: Any]], force: Bool = false) {
-        guard let data = try? JSONSerialization.data(withJSONObject: body, options: [.sortedKeys]) else { return }
-        guard force || data != sessionsBody else { return }
-        sessionsBody = data
-        guard sessionSubscribers > 0 else { return }
-        let wrapped: [String: Any] = ["now": Int(Date().timeIntervalSince1970), "s": body]
-        guard let payload = try? JSONSerialization.data(withJSONObject: wrapped) else { return }
-        sessionsSeq &+= 1
-        // Anything still queued is superseded; the phone discards incomplete sequences.
-        sessionsQueue = PerchProtocol.chunks(payload, seq: sessionsSeq, limit: payloadLimit)
-        drainSessions()
+        send(sessionsChannel, fields: ["s": body], force: force)
     }
 
-    private func drainSessions() {
-        while let chunk = sessionsQueue.first {
-            guard manager.updateValue(chunk, for: sessionsChar, onSubscribedCentrals: nil) else { return }
-            sessionsQueue.removeFirst()
+    /// Sends battery and Now Playing state when it changes.
+    func update(extras fields: [String: Any], force: Bool = false) {
+        send(extrasChannel, fields: fields, force: force)
+    }
+
+    private func send(_ channel: JSONChannel, fields: [String: Any], force: Bool) {
+        guard let data = try? JSONSerialization.data(withJSONObject: fields, options: [.sortedKeys]) else { return }
+        guard force || data != channel.body else { return }
+        channel.body = data
+        guard channel.subscribers > 0 else { return }
+        // "now" lets the phone shift timestamps onto its own clock.
+        var wrapped = fields
+        wrapped["now"] = Int(Date().timeIntervalSince1970)
+        guard let payload = try? JSONSerialization.data(withJSONObject: wrapped) else { return }
+        channel.seq &+= 1
+        // Anything still queued is superseded; the phone discards incomplete sequences.
+        channel.queue = PerchProtocol.chunks(payload, seq: channel.seq, limit: payloadLimit)
+        drain(channel)
+    }
+
+    private func drain(_ channel: JSONChannel) {
+        while let chunk = channel.queue.first {
+            guard manager.updateValue(chunk, for: channel.characteristic, onSubscribedCentrals: nil) else { return }
+            channel.queue.removeFirst()
         }
     }
 
-    /// Set by the app so a new subscriber gets the current details immediately.
-    var onSessionsSubscribed: (() -> Void)?
+    /// Set by the app so a new subscriber gets the current state immediately.
+    var onChannelSubscribed: ((CBUUID) -> Void)?
 
     private func sendClaude() {
         guard !subscribers.isEmpty else { return }
@@ -100,12 +107,11 @@ final class Peripheral: NSObject, CBPeripheralManagerDelegate {
         report()
         guard peripheral.state == .poweredOn else {
             subscribers.removeAll()
-            sessionSubscribers = 0
-            sessionsQueue.removeAll()
+            for channel in channels { channel.reset() }
             return
         }
         let service = CBMutableService(type: PerchProtocol.service, primary: true)
-        service.characteristics = [statsChar, claudeChar, infoChar, sessionsChar]
+        service.characteristics = [statsChar, claudeChar, infoChar] + channels.map(\.characteristic)
         peripheral.removeAllServices()
         peripheral.add(service)
     }
@@ -143,9 +149,9 @@ final class Peripheral: NSObject, CBPeripheralManagerDelegate {
                            didSubscribeTo characteristic: CBCharacteristic) {
         subscribers[central.identifier] = central
         report()
-        if characteristic.uuid == PerchProtocol.sessions {
-            sessionSubscribers += 1
-            onSessionsSubscribed?()
+        if let channel = channels.first(where: { $0.characteristic.uuid == characteristic.uuid }) {
+            channel.subscribers += 1
+            onChannelSubscribed?(characteristic.uuid)
         }
         if characteristic.uuid == PerchProtocol.claude {
             // Re-encode for this central's MTU and send right away.
@@ -159,15 +165,34 @@ final class Peripheral: NSObject, CBPeripheralManagerDelegate {
         if characteristic.uuid == PerchProtocol.stats {
             subscribers.removeValue(forKey: central.identifier)
         }
-        if characteristic.uuid == PerchProtocol.sessions {
-            sessionSubscribers = max(0, sessionSubscribers - 1)
-            if sessionSubscribers == 0 { sessionsQueue.removeAll() }
+        if let channel = channels.first(where: { $0.characteristic.uuid == characteristic.uuid }) {
+            channel.subscribers = max(0, channel.subscribers - 1)
+            if channel.subscribers == 0 { channel.queue.removeAll() }
         }
         report()
     }
 
     func peripheralManagerIsReady(toUpdateSubscribers peripheral: CBPeripheralManager) {
-        drainSessions()
+        for channel in channels { drain(channel) }
         if pendingClaude { sendClaude() }
+    }
+}
+
+/// One encrypted characteristic carrying chunked JSON, plus its send state.
+final class JSONChannel {
+    let characteristic: CBMutableCharacteristic
+    var body = Data()
+    var queue: [Data] = []
+    var seq: UInt16 = 0
+    var subscribers = 0
+
+    init(_ uuid: CBUUID) {
+        characteristic = CBMutableCharacteristic(
+            type: uuid, properties: [.notifyEncryptionRequired], value: nil, permissions: [.readEncryptionRequired])
+    }
+
+    func reset() {
+        subscribers = 0
+        queue.removeAll()
     }
 }

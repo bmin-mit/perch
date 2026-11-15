@@ -18,7 +18,11 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.layout.size
+import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.ui.res.painterResource
+import dev.perch.standby.R
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -90,13 +94,43 @@ fun ClaudePage(mac: MacSnapshot, nowSec: Long, use24h: Boolean) {
                     color = if (waiting > 0) WaitingColor else MaterialTheme.colorScheme.onSurfaceVariant,
                 )
             }
-            LazyColumn(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+            LazyColumn(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                 items(sessions, key = { it.id }) { s ->
                     SessionRow(s, nowSec, s.id == selected.id) { pinned = s.id }
                 }
             }
+            SystemStrip(mac)
         }
         SessionDetailPanel(selected, nowSec, use24h, Modifier.weight(1f).fillMaxHeight())
+    }
+}
+
+/** The Mac's vitals at a glance, so you don't have to leave this page to check them. */
+@Composable
+private fun SystemStrip(mac: MacSnapshot) {
+    val stats = mac.stats ?: return
+    Row(
+        Modifier.fillMaxWidth().padding(start = 6.dp, top = 8.dp),
+        horizontalArrangement = Arrangement.SpaceBetween,
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        StripItem(R.drawable.ic_cpu, "CPU", "${stats.cpuPercent}%")
+        StripItem(R.drawable.ic_memory_stick, "Memory", "${stats.memPercent}%")
+        StripItem(R.drawable.ic_arrow_down_up, "Network down", formatRate(stats.downBytesPerSec))
+    }
+}
+
+@Composable
+private fun StripItem(icon: Int, description: String, value: String) {
+    Row(verticalAlignment = Alignment.CenterVertically) {
+        Icon(
+            painterResource(icon),
+            contentDescription = description,
+            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.size(16.dp),
+        )
+        Spacer(Modifier.width(4.dp))
+        Text(value, style = MaterialTheme.typography.labelLarge, maxLines = 1)
     }
 }
 

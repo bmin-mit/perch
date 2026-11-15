@@ -59,11 +59,31 @@ data class SessionDetail(
     val recent: List<ToolUse>,
 )
 
+data class BatteryInfo(val percent: Int, val charging: Boolean, val onAc: Boolean, val minutes: Int?)
+
+/** What the Mac is playing. [at] is when [position] was sampled, on the phone's clock (Unix seconds). */
+data class NowPlaying(
+    val title: String,
+    val artist: String?,
+    val app: String?,
+    val playing: Boolean,
+    val duration: Long?,
+    val position: Long?,
+    val at: Long,
+) {
+    fun positionAt(nowSec: Long): Long? = position?.let { p ->
+        val moved = if (playing) (nowSec - at).coerceAtLeast(0) else 0
+        (p + moved).coerceAtMost(duration ?: Long.MAX_VALUE)
+    }
+}
+
 data class MacSnapshot(
     val link: LinkState = LinkState.Scanning,
     val host: String? = null,
     val stats: MacStats? = null,
     val claude: ClaudeStatus? = null,
+    val battery: BatteryInfo? = null,
+    val media: NowPlaying? = null,
     /** Null until the (paired, encrypted) details channel has delivered something. */
     val sessions: List<SessionDetail>? = null,
     val cpuHistory: List<Float> = emptyList(),
@@ -82,6 +102,35 @@ object Protocol {
     val CLAUDE: UUID = UUID.fromString("8f1e0003-6d2a-4b7c-9c41-5065726368aa")
     val INFO: UUID = UUID.fromString("8f1e0004-6d2a-4b7c-9c41-5065726368aa")
     val SESSIONS: UUID = UUID.fromString("8f1e0005-6d2a-4b7c-9c41-5065726368aa")
+    val EXTRAS: UUID = UUID.fromString("8f1e0006-6d2a-4b7c-9c41-5065726368aa")
+
+    /** Battery and Now Playing JSON: {"now", "bat"?: {...}, "media"?: {...}}. */
+    fun parseExtras(json: String): Pair<BatteryInfo?, NowPlaying?>? = try {
+        val root = org.json.JSONObject(json)
+        val skew = System.currentTimeMillis() / 1000 - root.getLong("now")
+        val battery = root.optJSONObject("bat")?.let { b ->
+            BatteryInfo(
+                percent = b.optInt("pct"),
+                charging = b.optBoolean("chg"),
+                onAc = b.optBoolean("ac"),
+                minutes = if (b.has("min")) b.getInt("min") else null,
+            )
+        }
+        val media = root.optJSONObject("media")?.takeIf { it.has("title") }?.let { m ->
+            NowPlaying(
+                title = m.getString("title"),
+                artist = m.optString("artist").ifEmpty { null },
+                app = m.optString("app").ifEmpty { null },
+                playing = m.optInt("playing") == 1 || m.optBoolean("playing"),
+                duration = if (m.has("dur")) m.getLong("dur") else null,
+                position = if (m.has("pos")) m.getLong("pos") else null,
+                at = (if (m.has("at")) m.getLong("at") else root.getLong("now")) + skew,
+            )
+        }
+        battery to media
+    } catch (e: org.json.JSONException) {
+        null
+    }
 
     /** Session details JSON: {"now": macUnixSeconds, "s": [ ... ]}. */
     fun parseSessions(json: String): List<SessionDetail>? = try {

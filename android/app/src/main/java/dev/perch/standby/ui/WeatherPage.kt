@@ -1,5 +1,6 @@
 package dev.perch.standby.ui
 
+import androidx.annotation.DrawableRes
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -9,19 +10,29 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.rotate
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import dev.perch.standby.R
 import dev.perch.standby.data.Settings
+import dev.perch.standby.data.Weather
 import dev.perch.standby.data.WeatherState
 import java.util.Locale
+import kotlin.math.roundToInt
+
+private val RainBlue = Color(0xFF94C8FF)
 
 @Composable
 fun WeatherPage(state: WeatherState, settings: Settings) {
@@ -37,41 +48,56 @@ fun WeatherPage(state: WeatherState, settings: Settings) {
     }
     val w = state.weather
     val f = settings.fahrenheit
-    val label = weatherLabel(w.code, w.isDay)
-    Column(Modifier.fillMaxSize(), verticalArrangement = Arrangement.spacedBy(16.dp)) {
+    Column(Modifier.fillMaxSize(), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+        // Hero: icon, temperature, place and today's range.
         Row(
             Modifier.weight(1f).fillMaxWidth(),
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.Center,
         ) {
-            WeatherIcon(w.code, w.isDay, 104.dp)
-            Spacer(Modifier.width(24.dp))
+            WeatherIcon(w.code, w.isDay, 88.dp)
+            Spacer(Modifier.width(20.dp))
             Text(
                 formatTemp(w.tempC, f),
-                fontSize = 120.sp,
-                lineHeight = 120.sp,
-                fontWeight = FontWeight.Bold,
+                fontSize = 96.sp,
+                lineHeight = 96.sp,
+                fontWeight = FontWeight.SemiBold,
+                fontFamily = GoogleSans,
                 color = MaterialTheme.colorScheme.onSurface,
             )
-            Spacer(Modifier.width(28.dp))
+            Spacer(Modifier.width(24.dp))
             Column {
                 Text(
                     w.place,
-                    style = MaterialTheme.typography.headlineMedium,
+                    style = MaterialTheme.typography.headlineSmall,
                     color = MaterialTheme.colorScheme.primary,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
                 )
-                Text(label, style = MaterialTheme.typography.titleLarge)
-                Spacer(Modifier.height(4.dp))
+                Text(weatherLabel(w.code, w.isDay), style = MaterialTheme.typography.titleLarge)
                 Text(
-                    "High ${formatTemp(w.highC, f)} · Low ${formatTemp(w.lowC, f)} · Feels ${formatTemp(w.feelsC, f)}",
-                    style = MaterialTheme.typography.bodyLarge,
+                    "↑ ${formatTemp(w.highC, f)}   ↓ ${formatTemp(w.lowC, f)}",
+                    style = MaterialTheme.typography.titleMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
             }
         }
-        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+
+        // Conditions as icon + value; captions only where the icon alone could be misread.
+        Panel(Modifier.fillMaxWidth()) {
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                Metric(R.drawable.wx_thermometer, formatTemp(w.feelsC, f), "feels like")
+                Metric(R.drawable.wx_droplets, "${w.humidity}%", "humidity", RainBlue)
+                WindMetric(w, f)
+                Metric(R.drawable.wx_umbrella, "${w.rainChance}%", "rain today", RainBlue)
+                Metric(R.drawable.wx_sun_medium, "UV ${w.uvMax.roundToInt()}", uvWord(w.uvMax), Color(0xFFFFD27A))
+                w.sunrise?.let { Metric(R.drawable.wx_sunrise, it, "sunrise", Color(0xFFFFD27A)) }
+                w.sunset?.let { Metric(R.drawable.wx_sunset, it, "sunset", Color(0xFFFFB27A)) }
+            }
+        }
+
+        // Next six hours.
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
             w.hours.take(6).forEach { h ->
                 Panel(Modifier.weight(1f)) {
                     Column(Modifier.fillMaxWidth(), horizontalAlignment = Alignment.CenterHorizontally) {
@@ -80,17 +106,79 @@ fun WeatherPage(state: WeatherState, settings: Settings) {
                             style = MaterialTheme.typography.labelLarge,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
-                        WeatherIcon(h.code, h.isDay, 30.dp, Modifier.padding(vertical = 6.dp))
+                        WeatherIcon(h.code, h.isDay, 28.dp, Modifier.padding(vertical = 4.dp))
                         Text(
                             formatTemp(h.tempC, f),
                             style = MaterialTheme.typography.titleMedium,
                             fontWeight = FontWeight.SemiBold,
                         )
+                        // Rain chance only when it's worth noticing.
+                        Row(
+                            Modifier.height(18.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            if (h.rainChance >= 10) {
+                                Icon(
+                                    painterResource(R.drawable.wx_droplets),
+                                    contentDescription = "Chance of rain",
+                                    tint = RainBlue,
+                                    modifier = Modifier.size(13.dp),
+                                )
+                                Spacer(Modifier.width(3.dp))
+                                Text("${h.rainChance}%", style = MaterialTheme.typography.labelMedium, color = RainBlue)
+                            }
+                        }
                     }
                 }
             }
         }
     }
+}
+
+@Composable
+private fun Metric(
+    @DrawableRes icon: Int,
+    value: String,
+    caption: String,
+    tint: Color = MaterialTheme.colorScheme.onSurfaceVariant,
+    iconModifier: Modifier = Modifier,
+) {
+    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Icon(painterResource(icon), contentDescription = caption, tint = tint, modifier = iconModifier.size(22.dp))
+            Spacer(Modifier.width(6.dp))
+            Text(value, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold, maxLines = 1)
+        }
+        Text(
+            caption,
+            style = MaterialTheme.typography.labelMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            maxLines = 1,
+        )
+    }
+}
+
+/** Wind speed with an arrow pointing the way the wind is blowing. */
+@Composable
+private fun WindMetric(w: Weather, imperial: Boolean) {
+    val speed = if (imperial) "${(w.windKmh / 1.609).roundToInt()} mph" else "${w.windKmh.roundToInt()} km/h"
+    Metric(
+        R.drawable.wx_navigation_2,
+        speed,
+        "wind ${compass(w.windFromDeg)}",
+        iconModifier = Modifier.rotate((w.windFromDeg + 180f) % 360f),
+    )
+}
+
+private fun compass(deg: Int): String =
+    listOf("N", "NE", "E", "SE", "S", "SW", "W", "NW")[(((deg % 360) + 360) % 360 + 22) / 45 % 8]
+
+private fun uvWord(uv: Double): String = when {
+    uv < 3 -> "low"
+    uv < 6 -> "moderate"
+    uv < 8 -> "high"
+    uv < 11 -> "very high"
+    else -> "extreme"
 }
 
 private fun hourLabel(hour: Int, use24h: Boolean): String = when {

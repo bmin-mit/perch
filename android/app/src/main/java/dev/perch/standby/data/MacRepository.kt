@@ -38,6 +38,7 @@ class MacRepository(
         onStats = ::pushStats,
         onClaude = { claude -> _state.update { it.copy(claude = claude) } },
         onSessions = { sessions -> _state.update { it.copy(sessions = sessions) } },
+        onExtras = { battery, media -> _state.update { it.copy(battery = battery, media = media) } },
     )
 
     /** Call while a screen is visible; the link is torn down when the last user releases. */
@@ -78,7 +79,16 @@ class MacRepository(
     }
 
     private suspend fun runDemo() {
-        _state.value = MacSnapshot(link = LinkState.Demo, host = "Demo Mac")
+        val t0 = System.currentTimeMillis() / 1000
+        _state.value = MacSnapshot(
+            link = LinkState.Demo,
+            host = "Demo Mac",
+            battery = BatteryInfo(percent = 76, charging = true, onAc = true, minutes = 38),
+            media = NowPlaying(
+                title = "Weightless", artist = "Marconi Union", app = "Music",
+                playing = true, duration = 485, position = 72, at = t0,
+            ),
+        )
         val frames = listOf(
             ClaudeStatus(
                 1, 0, 1,

@@ -23,6 +23,20 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private let claudeLine = NSMenuItem(title: "", action: nil, keyEquivalent: "")
     private var timer: Timer?
     private let transcripts = TranscriptReader()
+    private let media = MediaWatcher()
+    private var battery: [String: Any]?
+    private var tickCount = 0
+
+    private func extras() -> [String: Any] {
+        var out: [String: Any] = [:]
+        if let battery { out["bat"] = battery }
+        if !media.current.isEmpty { out["media"] = media.current }
+        return out
+    }
+
+    func applicationWillTerminate(_ notification: Notification) {
+        media.stop()
+    }
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         statusItem.button?.image = NSImage(systemSymbolName: "clock.badge", accessibilityDescription: "Perch")
@@ -50,12 +64,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 try? Data(line.utf8).write(to: log)
             }
         }
-        peripheral.onSessionsSubscribed = { [weak self] in
+        peripheral.onChannelSubscribed = { [weak self] uuid in
             guard let self else { return }
-            let records = ClaudeSessions.loadRecords()
-            self.peripheral.update(
-                details: PerchProtocol.sessionsBody(records, transcripts: self.transcripts), force: true)
+            if uuid == PerchProtocol.sessions {
+                let records = ClaudeSessions.loadRecords()
+                self.peripheral.update(
+                    details: PerchProtocol.sessionsBody(records, transcripts: self.transcripts), force: true)
+            } else {
+                self.peripheral.update(extras: self.extras(), force: true)
+            }
         }
+        media.start()
         _ = system.sample() // prime the counters so the first real sample has a baseline
         timer = Timer.scheduledTimer(withTimeInterval: 1, repeats: true) { [weak self] _ in self?.tick() }
         timer?.tolerance = 0.1
@@ -69,6 +88,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         peripheral.update(sessions: sessions)
         peripheral.update(details: PerchProtocol.sessionsBody(records, transcripts: transcripts))
         transcripts.forget(except: Set(records.compactMap(\.transcript)))
+        // Battery changes slowly; checking every 5 s is plenty. Media updates arrive from the helper.
+        if tickCount % 5 == 0 { battery = Battery.read() }
+        tickCount += 1
+        peripheral.update(extras: extras())
 
         statsLine.title = String(
             format: "CPU %d%% · RAM %.1f/%.0f GB · ↓%@ ↑%@",

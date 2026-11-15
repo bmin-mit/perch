@@ -33,6 +33,12 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.foundation.layout.size
+import androidx.compose.material3.Icon
+import androidx.compose.ui.res.painterResource
+import dev.perch.standby.R
+import dev.perch.standby.data.BatteryInfo
+import dev.perch.standby.data.NowPlaying
 import dev.perch.standby.data.ClaudeState
 import dev.perch.standby.data.LinkState
 import dev.perch.standby.data.MacSnapshot
@@ -56,11 +62,14 @@ fun ClockPage(
         // Swipe up/down to switch clock faces, like StandBy.
         val faces = rememberPagerState(initialPage = settings.clockFace.coerceIn(0, FACES - 1)) { FACES }
         LaunchedEffect(faces.settledPage) { onFaceChange(faces.settledPage) }
-        VerticalPager(faces, Modifier.weight(1.8f).fillMaxHeight()) { face ->
-            when (face) {
-                0 -> DigitalFace(now, settings.use24h)
-                else -> AnalogFace(now)
+        Column(Modifier.weight(1.8f).fillMaxHeight(), horizontalAlignment = Alignment.CenterHorizontally) {
+            VerticalPager(faces, Modifier.weight(1f).fillMaxWidth()) { face ->
+                when (face) {
+                    0 -> DigitalFace(now, settings.use24h)
+                    else -> AnalogFace(now)
+                }
             }
+            mac.media?.let { NowPlayingLine(it, now.atZone(java.time.ZoneId.systemDefault()).toEpochSecond()) }
         }
         Spacer(Modifier.width(24.dp))
         // Glance stack: no card backgrounds, so the clock stays the hero (StandBy removes widget backgrounds).
@@ -230,11 +239,112 @@ private fun MacGlance(mac: MacSnapshot) {
         Text(linkMessage(mac.link), style = MaterialTheme.typography.bodyLarge)
         return
     }
-    Row(horizontalArrangement = Arrangement.spacedBy(20.dp)) {
+    Row(horizontalArrangement = Arrangement.spacedBy(18.dp), verticalAlignment = Alignment.Bottom) {
         Meter("CPU", stats.cpuPercent, Modifier.weight(1f))
-        Meter("Memory", stats.memPercent, Modifier.weight(1f))
+        Meter(if (mac.battery != null) "RAM" else "Memory", stats.memPercent, Modifier.weight(1f))
+        mac.battery?.let { BatteryGlance(it) }
     }
 }
+
+@Composable
+private fun BatteryGlance(b: BatteryInfo) {
+    val icon = when {
+        b.charging -> R.drawable.ic_battery_charging
+        b.percent >= 70 -> R.drawable.ic_battery_full
+        b.percent >= 35 -> R.drawable.ic_battery_medium
+        else -> R.drawable.ic_battery_low
+    }
+    val tint = when {
+        b.charging -> MaterialTheme.colorScheme.primary
+        b.percent <= 20 -> MaterialTheme.colorScheme.error
+        else -> MaterialTheme.colorScheme.onSurfaceVariant
+    }
+    Column(horizontalAlignment = Alignment.End) {
+        PanelLabel(
+            when {
+                b.charging && b.minutes != null -> "full in ${duration(b.minutes * 60L)}"
+                b.charging -> "charging"
+                !b.onAc && b.minutes != null -> "${duration(b.minutes * 60L)} left"
+                b.onAc -> "plugged in"
+                else -> "battery"
+            }
+        )
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Icon(
+                painterResource(icon),
+                contentDescription = if (b.charging) "Mac battery, charging" else "Mac battery",
+                tint = tint,
+                modifier = Modifier.size(24.dp),
+            )
+            Spacer(Modifier.width(6.dp))
+            Text("${b.percent}%", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.SemiBold)
+        }
+    }
+}
+
+/** What's playing on the Mac: state icon, title and artist, and a thin progress line. */
+@Composable
+private fun NowPlayingLine(m: NowPlaying, nowSec: Long) {
+    val accent = MaterialTheme.colorScheme.primary
+    Column(Modifier.fillMaxWidth(0.82f).padding(bottom = 4.dp)) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Icon(
+                painterResource(if (m.playing) R.drawable.ic_music else R.drawable.ic_pause),
+                contentDescription = if (m.playing) "Playing" else "Paused",
+                tint = if (m.playing) accent else MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.size(20.dp),
+            )
+            Spacer(Modifier.width(10.dp))
+            Text(
+                m.title,
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.SemiBold,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.weight(1f, fill = false),
+            )
+            (m.artist ?: m.app)?.let {
+                Text(
+                    "  ·  $it",
+                    style = MaterialTheme.typography.titleMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.weight(1f, fill = false),
+                )
+            }
+        }
+        val pos = m.positionAt(nowSec)
+        val dur = m.duration
+        if (pos != null && dur != null && dur > 0) {
+            Spacer(Modifier.height(6.dp))
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(
+                    mmss(pos),
+                    style = MaterialTheme.typography.labelMedium.copy(fontFeatureSettings = "tnum"),
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                Spacer(Modifier.width(8.dp))
+                LinearProgressIndicator(
+                    progress = { pos.toFloat() / dur },
+                    modifier = Modifier.weight(1f).height(3.dp),
+                    color = if (m.playing) accent else MaterialTheme.colorScheme.outline,
+                    trackColor = MaterialTheme.colorScheme.surfaceContainerHighest,
+                    gapSize = 0.dp,
+                    drawStopIndicator = {},
+                )
+                Spacer(Modifier.width(8.dp))
+                Text(
+                    mmss(dur),
+                    style = MaterialTheme.typography.labelMedium.copy(fontFeatureSettings = "tnum"),
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+        }
+    }
+}
+
+private fun mmss(seconds: Long) = "%d:%02d".format(seconds / 60, seconds % 60)
 
 @Composable
 private fun Meter(label: String, percent: Int, modifier: Modifier = Modifier) {
@@ -242,7 +352,13 @@ private fun Meter(label: String, percent: Int, modifier: Modifier = Modifier) {
         Row(verticalAlignment = Alignment.Bottom) {
             PanelLabel(label)
             Spacer(Modifier.weight(1f))
-            Text("$percent%", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.SemiBold)
+            Text(
+                "$percent%",
+                style = MaterialTheme.typography.titleLarge,
+                fontWeight = FontWeight.SemiBold,
+                maxLines = 1,
+                softWrap = false,
+            )
         }
         Spacer(Modifier.height(6.dp))
         LinearProgressIndicator(

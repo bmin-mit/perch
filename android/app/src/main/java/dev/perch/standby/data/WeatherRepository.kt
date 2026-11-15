@@ -29,7 +29,7 @@ import java.net.URLEncoder
 import java.util.Locale
 import kotlin.coroutines.resume
 
-data class HourCast(val hour: Int, val tempC: Double, val code: Int, val isDay: Boolean)
+data class HourCast(val hour: Int, val tempC: Double, val code: Int, val isDay: Boolean, val rainChance: Int)
 
 data class Weather(
     val place: String,
@@ -39,6 +39,16 @@ data class Weather(
     val isDay: Boolean,
     val highC: Double,
     val lowC: Double,
+    val humidity: Int,
+    val windKmh: Double,
+    /** Direction the wind blows from, in degrees (0 = north). */
+    val windFromDeg: Int,
+    val uvMax: Double,
+    /** Highest chance of rain today, percent. */
+    val rainChance: Int,
+    /** "HH:mm" in the forecast location's time. */
+    val sunrise: String?,
+    val sunset: String?,
     val hours: List<HourCast>,
 )
 
@@ -133,9 +143,11 @@ class WeatherRepository(
         // Two decimals (~1 km) is plenty for a forecast and avoids sending a precise position.
         val url = "https://api.open-meteo.com/v1/forecast" +
             "?latitude=${"%.2f".format(Locale.US, lat)}&longitude=${"%.2f".format(Locale.US, lon)}" +
-            "&current=temperature_2m,apparent_temperature,weather_code,is_day" +
-            "&hourly=temperature_2m,weather_code,is_day&forecast_hours=7" +
-            "&daily=temperature_2m_max,temperature_2m_min&forecast_days=1&timezone=auto"
+            "&current=temperature_2m,apparent_temperature,weather_code,is_day,relative_humidity_2m," +
+            "wind_speed_10m,wind_direction_10m" +
+            "&hourly=temperature_2m,weather_code,is_day,precipitation_probability&forecast_hours=7" +
+            "&daily=temperature_2m_max,temperature_2m_min,uv_index_max,precipitation_probability_max," +
+            "sunrise,sunset&forecast_days=1&timezone=auto"
         val json = JSONObject(httpGet(url))
         val current = json.getJSONObject("current")
         val daily = json.getJSONObject("daily")
@@ -147,8 +159,10 @@ class WeatherRepository(
                 tempC = hourly.getJSONArray("temperature_2m").getDouble(i),
                 code = hourly.getJSONArray("weather_code").getInt(i),
                 isDay = hourly.getJSONArray("is_day").getInt(i) == 1,
+                rainChance = hourly.getJSONArray("precipitation_probability").optInt(i),
             )
         }
+        fun clock(key: String) = daily.optJSONArray(key)?.optString(0)?.takeIf { it.length >= 16 }?.substring(11, 16)
         return WeatherState.Ready(
             Weather(
                 place = place,
@@ -158,6 +172,13 @@ class WeatherRepository(
                 isDay = current.getInt("is_day") == 1,
                 highC = daily.getJSONArray("temperature_2m_max").getDouble(0),
                 lowC = daily.getJSONArray("temperature_2m_min").getDouble(0),
+                humidity = current.optInt("relative_humidity_2m"),
+                windKmh = current.optDouble("wind_speed_10m", 0.0),
+                windFromDeg = current.optInt("wind_direction_10m"),
+                uvMax = daily.getJSONArray("uv_index_max").optDouble(0, 0.0),
+                rainChance = daily.getJSONArray("precipitation_probability_max").optInt(0),
+                sunrise = clock("sunrise"),
+                sunset = clock("sunset"),
                 hours = hours,
             )
         )

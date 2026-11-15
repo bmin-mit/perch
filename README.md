@@ -15,6 +15,8 @@ cd android && ./gradlew :app:installDebug
 ```
 
 - Swipe left/right between **Clock**, **Weather**, **Mac** and **Claude Code**; swipe up/down on the clock to change face.
+- The clock page also shows the Mac's battery and what it is playing. Tap anywhere to reveal ⚙ for 5 seconds.
+- The weather page shows feels-like, humidity, wind, chance of rain, UV and sunrise/sunset as icons.
 - The **Claude Code** page lists sessions (those needing you first) and shows the selected one's
   current tool, waiting reason, last prompt, model, git branch, permission mode, prompt/tool counts,
   token usage, context size and recent tool calls. Tap a session to pin it for two minutes.
@@ -33,6 +35,9 @@ cd mac && ./install-hooks.sh
 This builds `Perch.app`, copies it to `/Applications`, adds `perch hook` to the Claude Code hooks in
 `~/.claude/settings.json` (a backup is written next to it), and starts the app. Allow Bluetooth
 access when macOS asks. Add Perch to *System Settings → General → Login Items* to start it at login.
+
+Now Playing comes from `media/PerchMedia.m`, which the agent loads into `/usr/bin/perl` because
+macOS 15.4+ only answers Now Playing queries from Apple-signed processes.
 
 Claude status per session: **working** (prompt submitted / tools running), **needs you**
 (a `Notification` hook: permission request or waiting for input), **idle** (stopped).

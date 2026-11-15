@@ -32,27 +32,36 @@ class BleLink(
     private val onStats: (MacStats) -> Unit,
     private val onClaude: (ClaudeStatus) -> Unit,
     private val onSessions: (List<SessionDetail>) -> Unit,
+    private val onExtras: (BatteryInfo?, NowPlaying?) -> Unit,
 ) {
-    private var chunkSeq = -1
-    private var chunks: Array<ByteArray?> = emptyArray()
-
     /** Reassembles [ver][seq u16][index][count]+slice notifications into one JSON document. */
-    private fun onChunk(v: ByteArray) {
-        if (v.size < 5 || v[0].toInt() != 1) return
-        val seq = (v[1].toInt() and 0xff) or ((v[2].toInt() and 0xff) shl 8)
-        val index = v[3].toInt() and 0xff
-        val count = v[4].toInt() and 0xff
-        if (count == 0 || index >= count) return
-        if (seq != chunkSeq || chunks.size != count) {
-            chunkSeq = seq
-            chunks = arrayOfNulls(count)
+    private class Assembler {
+        private var seq = -1
+        private var parts: Array<ByteArray?> = emptyArray()
+
+        fun reset() {
+            seq = -1
         }
-        chunks[index] = v.copyOfRange(5, v.size)
-        if (chunks.any { it == null }) return
-        val all = chunks.fold(ByteArray(0)) { acc, part -> acc + part!! }
-        chunkSeq = -1
-        Protocol.parseSessions(String(all, Charsets.UTF_8))?.let(onSessions)
+
+        fun add(v: ByteArray): String? {
+            if (v.size < 5 || v[0].toInt() != 1) return null
+            val s = (v[1].toInt() and 0xff) or ((v[2].toInt() and 0xff) shl 8)
+            val index = v[3].toInt() and 0xff
+            val count = v[4].toInt() and 0xff
+            if (count == 0 || index >= count) return null
+            if (s != seq || parts.size != count) {
+                seq = s
+                parts = arrayOfNulls(count)
+            }
+            parts[index] = v.copyOfRange(5, v.size)
+            if (parts.any { it == null }) return null
+            seq = -1
+            return String(parts.fold(ByteArray(0)) { acc, part -> acc + part!! }, Charsets.UTF_8)
+        }
     }
+
+    private val sessionsAssembler = Assembler()
+    private val extrasAssembler = Assembler()
 
     private val main = Handler(Looper.getMainLooper())
     private val adapter get() = context.getSystemService(BluetoothManager::class.java)?.adapter
@@ -202,7 +211,10 @@ class BleLink(
             }
             Protocol.CLAUDE -> Protocol.parseClaude(value)?.let(onClaude)
             Protocol.INFO -> onInfo(String(value, Charsets.UTF_8))
-            Protocol.SESSIONS -> onChunk(value)
+            Protocol.SESSIONS -> sessionsAssembler.add(value)?.let(Protocol::parseSessions)?.let(onSessions)
+            Protocol.EXTRAS -> extrasAssembler.add(value)?.let(Protocol::parseExtras)?.let { (bat, media) ->
+                onExtras(bat, media)
+            }
         }
     }
 
@@ -243,7 +255,9 @@ class BleLink(
                 ops += read(Protocol.CLAUDE)
                 // Encrypted: the first time, Android pairs with the Mac before this completes.
                 ops += subscribe(Protocol.SESSIONS)
-                chunkSeq = -1
+                ops += subscribe(Protocol.EXTRAS)
+                sessionsAssembler.reset()
+                extrasAssembler.reset()
                 next(g)
             }
         }

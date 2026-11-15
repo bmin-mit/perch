@@ -9,6 +9,8 @@ enum PerchProtocol {
     static let info = CBUUID(string: "8f1e0004-6d2a-4b7c-9c41-5065726368aa")
     /// Full session details as chunked JSON. Encrypted: subscribing requires pairing.
     static let sessions = CBUUID(string: "8f1e0005-6d2a-4b7c-9c41-5065726368aa")
+    /// Battery and Now Playing as chunked JSON: {"now", "bat"?, "media"?}. Encrypted.
+    static let extras = CBUUID(string: "8f1e0006-6d2a-4b7c-9c41-5065726368aa")
 
     /// Session details as JSON, without the "now" stamp (so unchanged data compares equal).
     static func sessionsBody(_ records: [SessionRecord], transcripts: TranscriptReader) -> [[String: Any]] {

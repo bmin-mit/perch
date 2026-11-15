@@ -17,6 +17,16 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.ui.input.pointer.PointerEventPass
+import androidx.compose.ui.input.pointer.PointerEventType
+import androidx.compose.ui.input.pointer.pointerInput
+import kotlinx.coroutines.delay
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.Settings
 import androidx.compose.material3.Icon
@@ -65,6 +75,16 @@ fun StandbyScreen(graph: AppGraph, onRequestPermissions: (() -> Unit)? = null) {
 
     val darkRoom = rememberIsDarkRoom(settings.autoNight)
 
+    // The settings button stays hidden; any touch shows it for 5 seconds.
+    var touches by remember { mutableIntStateOf(0) }
+    var gearVisible by remember { mutableStateOf(false) }
+    LaunchedEffect(touches) {
+        if (touches == 0) return@LaunchedEffect
+        gearVisible = true
+        delay(5_000)
+        gearVisible = false
+    }
+
     PerchTheme {
         Surface(Modifier.fillMaxSize(), color = Color.Black) {
             Box(
@@ -72,6 +92,14 @@ fun StandbyScreen(graph: AppGraph, onRequestPermissions: (() -> Unit)? = null) {
                     .fillMaxSize()
                     .background(Color.Black)
                     .nightFilter(darkRoom && !showSettings, NightTint.of(settings.nightTint))
+                    // Watch touches without consuming them, so swipes still reach the pagers.
+                    .pointerInput(Unit) {
+                        awaitPointerEventScope {
+                            while (true) {
+                                if (awaitPointerEvent(PointerEventPass.Initial).type == PointerEventType.Press) touches++
+                            }
+                        }
+                    }
                     .windowInsetsPadding(WindowInsets.displayCutout)
             ) {
                 // Nudge everything a few pixels each minute so static content can't burn in.
@@ -117,15 +145,19 @@ fun StandbyScreen(graph: AppGraph, onRequestPermissions: (() -> Unit)? = null) {
                 }
 
                 if (onRequestPermissions != null) {
-                    IconButton(
-                        onClick = { showSettings = true },
+                    AnimatedVisibility(
+                        visible = gearVisible,
+                        enter = fadeIn(),
+                        exit = fadeOut(),
                         modifier = Modifier.align(Alignment.BottomEnd),
                     ) {
-                        Icon(
-                            Icons.Outlined.Settings,
-                            contentDescription = "Settings",
-                            tint = MaterialTheme.colorScheme.outline,
-                        )
+                        IconButton(onClick = { showSettings = true }) {
+                            Icon(
+                                Icons.Outlined.Settings,
+                                contentDescription = "Settings",
+                                tint = MaterialTheme.colorScheme.outline,
+                            )
+                        }
                     }
                     if (showSettings) {
                         SettingsOverlay(
