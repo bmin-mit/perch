@@ -21,6 +21,11 @@ docs/      README screenshots
 tools/     svg2vector.py — converts Lucide SVG icons into Android vector drawables
 ```
 
+## Docs
+
+- [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md) — set up the tools, build both apps, run on a phone with `adb`
+- [docs/INSTALL.md](docs/INSTALL.md) — build signed release versions and install them on a Mac and an Android phone
+
 ## Android
 
 ```bash

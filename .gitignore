@@ -5,6 +5,9 @@ android/build/
 android/app/build/
 android/local.properties
 android/.kotlin/
+android/keystore.properties
+*.jks
+*.keystore
 *.iml
 .idea/
 # Mac

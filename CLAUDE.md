@@ -20,6 +20,9 @@ Claude Code status to it over BLE. See README.md for features, the protocol tabl
 
 ## Build and run
 
+Human-facing guides: `docs/DEVELOPMENT.md` (setup, debug builds) and `docs/INSTALL.md` (release builds,
+signing via git-ignored `android/keystore.properties`). Keep them in sync when build steps change.
+
 ```bash
 cd android && ./gradlew :app:assembleDebug        # APK: app/build/outputs/apk/debug/app-debug.apk
 cd mac && ./build.sh                               # build/Perch.app (also compiles the media dylib)
