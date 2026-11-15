@@ -40,8 +40,14 @@ cd mac && ./build.sh                               # build/Perch.app (also compi
 - The emulator cannot reach the Mac over Bluetooth, so it defaults to demo data (Settings → Demo Mac data).
   Useful emulator controls: `adb emu geo fix <lon> <lat>` for weather, `adb emu sensor set light 1|300`
   to toggle night mode.
-- On phones, encrypted channels (`…0005`–`…0007`) need the phone bonded with the Mac. A new phone shows
-  pairing prompts on both devices; if nobody accepts, battery, Now Playing and Claude details stay empty.
+- On phones, encrypted channels (`…0005`–`…0007`) need the phone bonded with the Mac. macOS rejected
+  pairing started from the app (Pixel log: `BondStateMachine … Status:9 … hciReason:86`) even while
+  discoverable; pair from the phone's Bluetooth settings with the Mac's Bluetooth settings open.
+  `adb logcat -s PerchBle` shows each subscription's ATT status and bond changes. The Mac's bluetoothd
+  log is not readable without admin rights.
+- Encrypted data (BAT, Now Playing) can take a few seconds after connecting; wait before judging it missing.
+- The clock-face pager sits above the Now Playing line; vertical swipes must start inside the clock area.
+  Analog is the second face, so swipe down to get back to digital.
 - The ⚙ button hides 5 s after the last touch, so reveal it and tap it in one command
   (`input tap` anywhere, short sleep, `input tap` on ⚙). `uiautomator dump` takes longer than 5 s.
 - To test many Claude sessions, write placeholder files into `~/.perch/sessions` (see `SessionRecord` for

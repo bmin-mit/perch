@@ -13,7 +13,11 @@ import android.bluetooth.le.ScanCallback
 import android.bluetooth.le.ScanFilter
 import android.bluetooth.le.ScanResult
 import android.bluetooth.le.ScanSettings
+import android.content.BroadcastReceiver
 import android.content.Context
+import android.content.Intent
+import android.content.IntentFilter
+import android.util.Log
 import android.content.pm.PackageManager
 import android.os.Handler
 import android.os.Looper
@@ -24,6 +28,12 @@ import java.util.UUID
  * BLE central that finds the Perch Mac agent, subscribes to its characteristics and
  * keeps reconnecting for as long as it is started. All callbacks fire on the main thread.
  */
+private const val TAG = "PerchBle"
+
+/** ATT errors meaning "pair first": insufficient authentication / encryption, and auth failure. */
+private val NEEDS_PAIRING = setOf(5, 15, 137)
+private val ENCRYPTED = setOf(Protocol.SESSIONS, Protocol.EXTRAS)
+
 @SuppressLint("MissingPermission")
 class BleLink(
     private val context: Context,
@@ -77,6 +87,11 @@ class BleLink(
     }
 
     fun stop() {
+        if (bondReceiverRegistered) {
+            context.unregisterReceiver(bondReceiver)
+            bondReceiverRegistered = false
+        }
+        pendingEncrypted.clear()
         running = false
         main.removeCallbacksAndMessages(null)
         stopScan()
@@ -157,6 +172,51 @@ class BleLink(
     }
 
     private var connected = false
+    private var discovered = false
+
+    private fun discoverOnce(g: BluetoothGatt) {
+        if (discovered) return
+        discovered = true
+        g.discoverServices()
+    }
+
+    // --- Pairing -------------------------------------------------------------------------
+    // Encrypted characteristics refuse a subscription until the phone is bonded with the Mac.
+    // Some Android versions start pairing on their own when that happens; others (Android 17
+    // on a Pixel) don't, so ask for it and subscribe again once the bond exists.
+
+    private val pendingEncrypted = mutableSetOf<UUID>()
+    private var bondReceiverRegistered = false
+
+    private val bondReceiver = object : BroadcastReceiver() {
+        override fun onReceive(context: Context, intent: Intent) {
+            val state = intent.getIntExtra(BluetoothDevice.EXTRA_BOND_STATE, BluetoothDevice.ERROR)
+            val device = intent.getParcelableExtra(BluetoothDevice.EXTRA_DEVICE, BluetoothDevice::class.java)
+            val g = gatt ?: return
+            if (device?.address != g.device.address) return
+            Log.i(TAG, "bond state -> $state")
+            if (state == BluetoothDevice.BOND_BONDED && pendingEncrypted.isNotEmpty()) {
+                val retry = pendingEncrypted.toList()
+                pendingEncrypted.clear()
+                retry.forEach { ops += subscribe(it) }
+                if (!inFlight) next(g)
+            }
+        }
+    }
+
+    private fun requestPairing(device: BluetoothDevice) {
+        if (!bondReceiverRegistered) {
+            context.registerReceiver(
+                bondReceiver, IntentFilter(BluetoothDevice.ACTION_BOND_STATE_CHANGED), Context.RECEIVER_EXPORTED,
+            )
+            bondReceiverRegistered = true
+        }
+        when (device.bondState) {
+            BluetoothDevice.BOND_NONE -> Log.i(TAG, "requesting pairing: ${device.createBond()}")
+            BluetoothDevice.BOND_BONDING -> Log.i(TAG, "pairing already in progress")
+            else -> Unit // bonded but still refused; nothing more to do from here
+        }
+    }
 
     private fun dropAndRescan() {
         connected = false
@@ -170,7 +230,25 @@ class BleLink(
     /** True while a GATT operation is outstanding; Android allows only one at a time. */
     private var inFlight = false
 
+    /** The characteristic the in-flight subscribe is for, so a timeout knows what stalled. */
+    private var currentSubscribe: UUID? = null
+
+    // Android sometimes never answers a write to an encrypted characteristic when pairing fails
+    // (seen on a Pixel 11 Pro), which would stall every later operation. Give up after 10 s.
+    private val opTimeout = Runnable {
+        val g = gatt ?: return@Runnable
+        val uuid = currentSubscribe
+        Log.i(TAG, "operation timed out: $uuid")
+        if (uuid != null && uuid in ENCRYPTED) {
+            pendingEncrypted += uuid
+            requestPairing(g.device)
+        }
+        next(g)
+    }
+
     private fun next(g: BluetoothGatt) {
+        main.removeCallbacks(opTimeout)
+        currentSubscribe = null
         while (true) {
             val op = ops.removeFirstOrNull()
             if (op == null) {
@@ -179,6 +257,7 @@ class BleLink(
             }
             if (op(g)) {
                 inFlight = true
+                main.postDelayed(opTimeout, 10_000)
                 return // started; its callback will call next()
             }
         }
@@ -208,6 +287,7 @@ class BleLink(
         if (ch == null || cccd == null) {
             false
         } else {
+            currentSubscribe = uuid
             g.setCharacteristicNotification(ch, true)
             g.writeDescriptor(cccd, BluetoothGattDescriptor.ENABLE_NOTIFICATION_VALUE) ==
                 android.bluetooth.BluetoothStatusCodes.SUCCESS
@@ -247,7 +327,8 @@ class BleLink(
             main.post {
                 if (g !== gatt) return@post
                 if (status == BluetoothGatt.GATT_SUCCESS && newState == BluetoothProfile.STATE_CONNECTED) {
-                    if (!g.requestMtu(517)) g.discoverServices()
+                    discovered = false
+                    if (!g.requestMtu(517)) discoverOnce(g)
                 } else {
                     dropAndRescan()
                 }
@@ -255,7 +336,8 @@ class BleLink(
         }
 
         override fun onMtuChanged(g: BluetoothGatt, mtu: Int, status: Int) {
-            main.post { if (g === gatt) g.discoverServices() }
+            // Some phones (seen on a Pixel 11 Pro) report the MTU change twice.
+            main.post { if (g === gatt) discoverOnce(g) }
         }
 
         override fun onServiceChanged(g: BluetoothGatt) {
@@ -305,7 +387,16 @@ class BleLink(
         }
 
         override fun onDescriptorWrite(g: BluetoothGatt, descriptor: BluetoothGattDescriptor, status: Int) {
-            main.post { if (g === gatt) next(g) }
+            main.post {
+                if (g !== gatt) return@post
+                val uuid = descriptor.characteristic.uuid
+                Log.i(TAG, "subscribe $uuid -> status $status")
+                if (status in NEEDS_PAIRING && uuid in ENCRYPTED) {
+                    pendingEncrypted += uuid
+                    requestPairing(g.device)
+                }
+                next(g)
+            }
         }
 
         override fun onCharacteristicChanged(

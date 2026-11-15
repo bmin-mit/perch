@@ -53,8 +53,11 @@ This builds `Perch.app`, copies it to `/Applications`, adds `perch hook` to the 
 `~/.claude/settings.json` (a backup is written next to it), and starts the app. Allow Bluetooth
 access when macOS asks. Add Perch to *System Settings → General → Login Items* to start it at login.
 
-The first time a phone connects, accept the Bluetooth pairing request on both the phone and the Mac:
-battery, Now Playing and Claude session details only travel over a paired (encrypted) link.
+Battery, Now Playing and Claude session details only travel over a paired (encrypted) link, so pair
+the phone with the Mac once in system settings: open *System Settings → Bluetooth* on the Mac, then on
+the phone go to *Settings → Connected devices → Pair new device*, pick the Mac and confirm the code on
+both. (Perch also asks Android to pair when an encrypted channel refuses it, but macOS rejected those
+requests in testing; pairing from the phone's Bluetooth settings works.)
 
 Now Playing comes from `media/PerchMedia.m`, which the agent loads into `/usr/bin/perl` because
 macOS 15.4+ only answers Now Playing queries from Apple-signed processes.
@@ -67,7 +70,7 @@ Claude status per session: **working** (prompt submitted / tools running), **nee
 | Device | OS | How | Result |
 | --- | --- | --- | --- |
 | Samsung Galaxy A25 5G (SM-A256E) | Android 16 | Physical, paired with the Mac | All pages, live Mac data, encrypted channels, night mode, session removal, scrolling with 13 sessions |
-| Google Pixel 11 Pro | Android 17 | Physical | Installs and connects; clock, weather and the unencrypted Mac/Claude summaries work. Pairing was not completed, so battery, Now Playing and Claude session details were not tested |
+| Google Pixel 11 Pro | Android 17 | Physical, paired with the Mac from Bluetooth settings | All pages, both clock faces, live Mac data, encrypted channels (battery, Now Playing, Claude details), session removal |
 | Android Emulator, Medium Phone | Android 17 (API 37) | Demo data | All pages, night mode colours, battery colour states |
 | MacBook Air (M5) | macOS 27.2 | Mac agent | BLE peripheral, Claude Code hooks, battery, Now Playing via Apple Music (including repeat) |
 
