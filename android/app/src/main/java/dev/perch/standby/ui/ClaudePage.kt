@@ -22,6 +22,10 @@ import androidx.compose.ui.draw.clipToBounds
 import kotlin.math.roundToInt
 import androidx.compose.foundation.layout.size
 import androidx.compose.material3.Icon
+import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.TextButton
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.outlined.Delete
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.ui.res.painterResource
 import dev.perch.standby.R
@@ -53,7 +57,7 @@ import java.util.Locale
 
 /** Claude Code sessions: a list on the left, everything about the selected one on the right. */
 @Composable
-fun ClaudePage(mac: MacSnapshot, nowSec: Long, use24h: Boolean) {
+fun ClaudePage(mac: MacSnapshot, nowSec: Long, use24h: Boolean, onRemove: (String) -> Unit) {
     val sessions = mac.sessions
     if (sessions.isNullOrEmpty()) {
         Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
@@ -103,7 +107,7 @@ fun ClaudePage(mac: MacSnapshot, nowSec: Long, use24h: Boolean) {
             }
             SystemStrip(mac)
         }
-        SessionDetailPanel(selected, nowSec, use24h, Modifier.weight(1f).fillMaxHeight())
+        SessionDetailPanel(selected, nowSec, use24h, onRemove, Modifier.weight(1f).fillMaxHeight())
     }
 }
 
@@ -167,14 +171,21 @@ private fun SessionRow(s: SessionDetail, nowSec: Long, selected: Boolean, onClic
 }
 
 @Composable
-private fun SessionDetailPanel(s: SessionDetail, nowSec: Long, use24h: Boolean, modifier: Modifier) {
+private fun SessionDetailPanel(
+    s: SessionDetail,
+    nowSec: Long,
+    use24h: Boolean,
+    onRemove: (String) -> Unit,
+    modifier: Modifier,
+) {
     val waiting = s.state == ClaudeState.Waiting
     Panel(
         modifier,
         color = if (waiting) WaitingColor.copy(alpha = 0.16f) else MaterialTheme.colorScheme.surfaceContainerLow,
     ) {
-        // Header: name, path and tags.
-        Row(verticalAlignment = Alignment.CenterVertically) {
+        // Header: name and tags on the left, Remove on the right edge.
+        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+          Row(Modifier.weight(1f), verticalAlignment = Alignment.CenterVertically) {
             Text(
                 s.name,
                 style = MaterialTheme.typography.headlineSmall,
@@ -187,6 +198,8 @@ private fun SessionDetailPanel(s: SessionDetail, nowSec: Long, use24h: Boolean, 
             s.branch?.let { Tag("⎇ $it") }
             s.model?.let { Tag(modelName(it)) }
             s.mode?.takeIf { it != "default" }?.let { Tag(modeName(it), WaitingColor) }
+          }
+          RemoveButton(s.id, onRemove)
         }
         Text(
             s.cwd,
@@ -335,6 +348,28 @@ private fun TokenBar(label: String, count: Long, total: Long, color: Color, modi
             color = MaterialTheme.colorScheme.onSurfaceVariant,
             maxLines = 1,
         )
+    }
+}
+
+/** Two taps to remove, so a stray touch on a bedside screen can't delete anything. */
+@Composable
+private fun RemoveButton(id: String, onRemove: (String) -> Unit) {
+    var armed by remember(id) { mutableStateOf(false) }
+    LaunchedEffect(armed) {
+        if (armed) {
+            delay(3_000)
+            armed = false
+        }
+    }
+    TextButton(
+        onClick = { if (armed) onRemove(id) else armed = true },
+        colors = ButtonDefaults.textButtonColors(
+            contentColor = if (armed) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant,
+        ),
+    ) {
+        Icon(Icons.Outlined.Delete, contentDescription = null, modifier = Modifier.size(18.dp))
+        Spacer(Modifier.width(6.dp))
+        Text(if (armed) "Tap again to remove" else "Remove", style = MaterialTheme.typography.labelLarge)
     }
 }
 

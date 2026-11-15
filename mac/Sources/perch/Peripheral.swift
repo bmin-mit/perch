@@ -15,6 +15,11 @@ final class Peripheral: NSObject, CBPeripheralManagerDelegate {
     private let sessionsChannel = JSONChannel(PerchProtocol.sessions)
     private let extrasChannel = JSONChannel(PerchProtocol.extras)
     private var channels: [JSONChannel] { [sessionsChannel, extrasChannel] }
+    private let commandChar = CBMutableCharacteristic(
+        type: PerchProtocol.command, properties: [.write], value: nil, permissions: [.writeEncryptionRequired])
+
+    /// Called on the main queue with each command the phone writes.
+    var onCommand: ((String) -> Void)?
 
     private var statsValue = Data()
     private var claudeValue = Data()
@@ -111,7 +116,7 @@ final class Peripheral: NSObject, CBPeripheralManagerDelegate {
             return
         }
         let service = CBMutableService(type: PerchProtocol.service, primary: true)
-        service.characteristics = [statsChar, claudeChar, infoChar] + channels.map(\.characteristic)
+        service.characteristics = [statsChar, claudeChar, infoChar, commandChar] + channels.map(\.characteristic)
         peripheral.removeAllServices()
         peripheral.add(service)
     }
@@ -143,6 +148,23 @@ final class Peripheral: NSObject, CBPeripheralManagerDelegate {
         }
         request.value = value.subdata(in: request.offset..<value.count)
         peripheral.respond(to: request, withResult: .success)
+    }
+
+    func peripheralManager(_ peripheral: CBPeripheralManager, didReceiveWrite requests: [CBATTRequest]) {
+        // ATT answers a batch of writes with one response, to the first request.
+        guard let first = requests.first else { return }
+        for request in requests {
+            guard request.characteristic.uuid == PerchProtocol.command else {
+                peripheral.respond(to: first, withResult: .writeNotPermitted)
+                return
+            }
+        }
+        peripheral.respond(to: first, withResult: .success)
+        for request in requests {
+            if let value = request.value, let text = String(data: value, encoding: .utf8) {
+                onCommand?(text)
+            }
+        }
     }
 
     func peripheralManager(_ peripheral: CBPeripheralManager, central: CBCentral,

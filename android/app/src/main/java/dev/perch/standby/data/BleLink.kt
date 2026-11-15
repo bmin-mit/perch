@@ -126,6 +126,7 @@ class BleLink(
 
     private fun closeGatt() {
         ops.clear()
+        inFlight = false
         try {
             gatt?.close()
         } catch (_: RuntimeException) {
@@ -166,11 +167,34 @@ class BleLink(
         }
     }
 
+    /** True while a GATT operation is outstanding; Android allows only one at a time. */
+    private var inFlight = false
+
     private fun next(g: BluetoothGatt) {
         while (true) {
-            val op = ops.removeFirstOrNull() ?: return
-            if (op(g)) return // started; its callback will call next()
+            val op = ops.removeFirstOrNull()
+            if (op == null) {
+                inFlight = false
+                return
+            }
+            if (op(g)) {
+                inFlight = true
+                return // started; its callback will call next()
+            }
         }
+    }
+
+    /** Sends a text command to the Mac agent (e.g. "remove:<id>"). Dropped if not connected. */
+    fun sendCommand(text: String) {
+        val g = gatt ?: return
+        if (!connected) return
+        ops += { gg ->
+            val ch = gg.getService(Protocol.SERVICE)?.getCharacteristic(Protocol.COMMAND)
+            ch != null && gg.writeCharacteristic(
+                ch, text.toByteArray(Charsets.UTF_8), BluetoothGattCharacteristic.WRITE_TYPE_DEFAULT,
+            ) == android.bluetooth.BluetoothStatusCodes.SUCCESS
+        }
+        if (!inFlight) next(g)
     }
 
     private fun read(uuid: UUID): (BluetoothGatt) -> Boolean = { g ->
@@ -249,6 +273,7 @@ class BleLink(
                 kickWatchdog()
                 onLink(LinkState.Connected)
                 ops.clear()
+                inFlight = false
                 ops += read(Protocol.INFO)
                 ops += subscribe(Protocol.STATS)
                 ops += subscribe(Protocol.CLAUDE)
@@ -273,6 +298,10 @@ class BleLink(
                 if (status == BluetoothGatt.GATT_SUCCESS) dispatch(characteristic.uuid, value)
                 next(g)
             }
+        }
+
+        override fun onCharacteristicWrite(g: BluetoothGatt, characteristic: BluetoothGattCharacteristic, status: Int) {
+            main.post { if (g === gatt) next(g) }
         }
 
         override fun onDescriptorWrite(g: BluetoothGatt, descriptor: BluetoothGattDescriptor, status: Int) {

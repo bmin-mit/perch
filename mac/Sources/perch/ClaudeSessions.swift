@@ -181,6 +181,21 @@ enum ClaudeSessions {
     }
 
     static func load() -> [ClaudeSession] { loadRecords().map(\.summary) }
+
+    /// Forgets a session the phone asked to remove. If it is still running, its next hook
+    /// event writes it back, so this only clears sessions that are really gone.
+    @discardableResult
+    static func remove(idPrefix: String) -> Bool {
+        let prefix = idPrefix.filter { $0.isLetter || $0.isNumber || $0 == "-" }
+        guard prefix.count >= 8,
+              let files = try? FileManager.default.contentsOfDirectory(at: directory, includingPropertiesForKeys: nil)
+        else { return false }
+        var removed = false
+        for url in files where url.pathExtension == "json" && url.lastPathComponent.hasPrefix(prefix) {
+            removed = (try? FileManager.default.removeItem(at: url)) != nil || removed
+        }
+        return removed
+    }
 }
 
 /// Follows Claude Code transcripts (JSONL) incrementally to pick up the model, git branch and token usage.

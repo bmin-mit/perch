@@ -11,6 +11,8 @@ enum PerchProtocol {
     static let sessions = CBUUID(string: "8f1e0005-6d2a-4b7c-9c41-5065726368aa")
     /// Battery and Now Playing as chunked JSON: {"now", "bat"?, "media"?}. Encrypted.
     static let extras = CBUUID(string: "8f1e0006-6d2a-4b7c-9c41-5065726368aa")
+    /// Phone → Mac commands as UTF-8 text, e.g. "remove:<session id prefix>". Encrypted write.
+    static let command = CBUUID(string: "8f1e0007-6d2a-4b7c-9c41-5065726368aa")
 
     /// Session details as JSON, without the "now" stamp (so unchanged data compares equal).
     static func sessionsBody(_ records: [SessionRecord], transcripts: TranscriptReader) -> [[String: Any]] {
@@ -18,7 +20,7 @@ enum PerchProtocol {
         let sorted = records.sorted {
             ($0.summary.state.priority, -$0.last) < ($1.summary.state.priority, -$1.last)
         }
-        return sorted.prefix(8).map { r in
+        return sorted.prefix(20).map { r in
             let t = r.transcript.map { transcripts.totals(for: $0) } ?? TranscriptReader.Totals()
             var d: [String: Any] = [
                 "id": String(r.id.prefix(8)), "name": r.name,

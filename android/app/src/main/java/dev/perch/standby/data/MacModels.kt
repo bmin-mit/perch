@@ -103,6 +103,7 @@ object Protocol {
     val INFO: UUID = UUID.fromString("8f1e0004-6d2a-4b7c-9c41-5065726368aa")
     val SESSIONS: UUID = UUID.fromString("8f1e0005-6d2a-4b7c-9c41-5065726368aa")
     val EXTRAS: UUID = UUID.fromString("8f1e0006-6d2a-4b7c-9c41-5065726368aa")
+    val COMMAND: UUID = UUID.fromString("8f1e0007-6d2a-4b7c-9c41-5065726368aa")
 
     /** Battery and Now Playing JSON: {"now", "bat"?: {...}, "media"?: {...}}. */
     fun parseExtras(json: String): Pair<BatteryInfo?, NowPlaying?>? = try {

@@ -124,6 +124,7 @@ fun StandbyScreen(graph: AppGraph, onRequestPermissions: (() -> Unit)? = null) {
                                 mac,
                                 now.atZone(java.time.ZoneId.systemDefault()).toEpochSecond(),
                                 settings.use24h,
+                                onRemove = graph.mac::removeSession,
                             )
                         }
                     }

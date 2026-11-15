@@ -74,6 +74,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 self.peripheral.update(extras: self.extras(), force: true)
             }
         }
+        peripheral.onCommand = { [weak self] command in
+            guard let self, command.hasPrefix("remove:") else { return }
+            ClaudeSessions.remove(idPrefix: String(command.dropFirst("remove:".count)))
+            self.tick() // send the updated list right away
+        }
         media.start()
         _ = system.sample() // prime the counters so the first real sample has a baseline
         timer = Timer.scheduledTimer(withTimeInterval: 1, repeats: true) { [weak self] _ in self?.tick() }

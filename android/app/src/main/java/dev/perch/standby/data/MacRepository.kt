@@ -61,6 +61,24 @@ class MacRepository(
         }
     }
 
+    /**
+     * Removes a session from the list. The Mac forgets it too; a session that is still
+     * running comes back with its next action.
+     */
+    fun removeSession(id: String) {
+        _state.update { s ->
+            val sessions = s.sessions?.filterNot { it.id == id }
+            s.copy(sessions = sessions)
+        }
+        if (_state.value.link == LinkState.Demo) {
+            demoRemoved += id
+        } else {
+            ble.sendCommand("remove:$id")
+        }
+    }
+
+    private val demoRemoved = mutableSetOf<String>()
+
     fun release() {
         if (--users > 0) return
         users = 0
@@ -140,7 +158,13 @@ class MacRepository(
                     1 -> BatteryInfo(percent = 54, charging = false, onAc = false, minutes = 190)
                     else -> BatteryInfo(percent = 14, charging = false, onAc = false, minutes = 25)
                 }
-                _state.update { it.copy(claude = frame, sessions = demoSessions(frame, started), battery = battery) }
+                _state.update {
+                    it.copy(
+                        claude = frame,
+                        sessions = demoSessions(frame, started).filterNot { s -> s.id in demoRemoved },
+                        battery = battery,
+                    )
+                }
             }
             tick++
             delay(1000)

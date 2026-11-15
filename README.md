@@ -19,7 +19,8 @@ cd android && ./gradlew :app:installDebug
 - The weather page shows feels-like, humidity, wind, chance of rain, UV and sunrise/sunset as icons.
 - The **Claude Code** page lists sessions (those needing you first) and shows the selected one's
   current tool, waiting reason, last prompt, model, git branch, permission mode, prompt/tool counts,
-  token usage, context size and recent tool calls. Tap a session to pin it for two minutes.
+  token usage, context size and recent tool calls. Tap a session to pin it for two minutes;
+  *Remove* (tap twice) clears a finished session. A session that is still running reappears on its next action.
 - To show it automatically while charging: ⚙ → *Screen saver settings* → pick **Perch**
   (on Samsung: Settings → Display → Screen saver).
 - In a dark room the whole display turns one dim colour: red, amber, green, soft white or blue (⚙ → *Night mode in the dark*).
