@@ -1,6 +1,23 @@
 package dev.perch.standby.ui
 
+import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.SizeTransform
+import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.slideInVertically
+import androidx.compose.animation.slideOutVertically
+import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.Canvas
+import androidx.compose.runtime.State
+import androidx.compose.runtime.key
+import androidx.compose.runtime.produceState
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.withFrameMillis
+import androidx.compose.ui.draw.clipToBounds
+import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.unit.IntOffset
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.BoxWithConstraints
@@ -98,17 +115,22 @@ private fun DigitalFace(now: LocalDateTime, use24h: Boolean) {
         val size = with(LocalDensity.current) { minOf(maxWidth / 2.75f, maxHeight * 0.62f).toSp() }
         Column(horizontalAlignment = Alignment.CenterHorizontally) {
             Row(verticalAlignment = Alignment.Bottom) {
-                Text(
-                    now.format(DateTimeFormatter.ofPattern(if (use24h) "HH:mm" else "h:mm")),
+                val time = now.format(DateTimeFormatter.ofPattern(if (use24h) "HH:mm" else "h:mm"))
+                val style = MaterialTheme.typography.displayLarge.copy(
                     fontSize = size,
                     lineHeight = size,
                     fontWeight = FontWeight.Bold,
                     letterSpacing = (-0.03).sp * size.value,
                     color = MaterialTheme.colorScheme.onSurface,
-                    maxLines = 1,
-                    softWrap = false,
-                    style = MaterialTheme.typography.displayLarge.copy(fontFeatureSettings = "tnum"),
+                    fontFeatureSettings = "tnum",
                 )
+                // One slot per character, keyed from the right so "9:59" → "10:00" keeps minutes aligned.
+                // A changed digit slides up out of its slot while the new one rises in from below.
+                Row(verticalAlignment = Alignment.Bottom) {
+                    time.forEachIndexed { i, ch ->
+                        key(time.length - i) { RollingChar(ch, style) }
+                    }
+                }
                 if (!use24h) {
                     Text(
                         now.format(DateTimeFormatter.ofPattern("a")),
@@ -128,7 +150,32 @@ private fun DigitalFace(now: LocalDateTime, use24h: Boolean) {
 }
 
 @Composable
+private fun RollingChar(ch: Char, style: TextStyle) {
+    AnimatedContent(
+        targetState = ch,
+        modifier = Modifier.clipToBounds(),
+        transitionSpec = {
+            val spec = tween<IntOffset>(450, easing = FastOutSlowInEasing)
+            (slideInVertically(spec) { it } + fadeIn(tween(300)))
+                .togetherWith(slideOutVertically(spec) { -it } + fadeOut(tween(300)))
+                .using(SizeTransform(clip = false))
+        },
+        label = "digit",
+    ) { c ->
+        Text(c.toString(), style = style, maxLines = 1, softWrap = false)
+    }
+}
+
+/** Wall-clock milliseconds, updated every frame while composed (the analog face only). */
+@Composable
+private fun rememberFrameMillis(): State<Long> = produceState(System.currentTimeMillis()) {
+    while (true) withFrameMillis { value = System.currentTimeMillis() }
+}
+
+@Composable
 private fun AnalogFace(now: LocalDateTime) {
+    val millis = rememberFrameMillis()
+    val zone = remember { java.time.ZoneId.systemDefault() }
     val tick = MaterialTheme.colorScheme.outline
     val major = MaterialTheme.colorScheme.onSurface
     val accent = MaterialTheme.colorScheme.primary
@@ -152,15 +199,19 @@ private fun AnalogFace(now: LocalDateTime) {
                     )
                 }
             }
-            val minute = now.minute + now.second / 60f
-            val hour = now.hour % 12 + minute / 60f
+            // Read per frame inside the draw phase, so only drawing re-runs: a continuous sweep.
+            val ms = millis.value
+            val msOfDay = Math.floorMod(ms + zone.rules.getOffset(java.time.Instant.ofEpochMilli(ms)).totalSeconds * 1000L, 86_400_000L)
+            val second = (msOfDay % 60_000L) / 1000f
+            val minute = (msOfDay / 60_000L % 60) + second / 60f
+            val hour = (msOfDay / 3_600_000L % 12) + minute / 60f
             rotate(hour * 30f, c) {
                 drawLine(major, c, Offset(c.x, c.y - r * 0.5f), r * 0.07f, StrokeCap.Round)
             }
             rotate(minute * 6f, c) {
                 drawLine(major, c, Offset(c.x, c.y - r * 0.78f), r * 0.045f, StrokeCap.Round)
             }
-            rotate(now.second * 6f, c) {
+            rotate(second * 6f, c) {
                 drawLine(accent, Offset(c.x, c.y + r * 0.12f), Offset(c.x, c.y - r * 0.84f), r * 0.015f, StrokeCap.Round)
             }
             drawCircle(accent, r * 0.04f, c)
