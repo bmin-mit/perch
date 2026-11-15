@@ -31,7 +31,29 @@ class BleLink(
     private val onInfo: (String) -> Unit,
     private val onStats: (MacStats) -> Unit,
     private val onClaude: (ClaudeStatus) -> Unit,
+    private val onSessions: (List<SessionDetail>) -> Unit,
 ) {
+    private var chunkSeq = -1
+    private var chunks: Array<ByteArray?> = emptyArray()
+
+    /** Reassembles [ver][seq u16][index][count]+slice notifications into one JSON document. */
+    private fun onChunk(v: ByteArray) {
+        if (v.size < 5 || v[0].toInt() != 1) return
+        val seq = (v[1].toInt() and 0xff) or ((v[2].toInt() and 0xff) shl 8)
+        val index = v[3].toInt() and 0xff
+        val count = v[4].toInt() and 0xff
+        if (count == 0 || index >= count) return
+        if (seq != chunkSeq || chunks.size != count) {
+            chunkSeq = seq
+            chunks = arrayOfNulls(count)
+        }
+        chunks[index] = v.copyOfRange(5, v.size)
+        if (chunks.any { it == null }) return
+        val all = chunks.fold(ByteArray(0)) { acc, part -> acc + part!! }
+        chunkSeq = -1
+        Protocol.parseSessions(String(all, Charsets.UTF_8))?.let(onSessions)
+    }
+
     private val main = Handler(Looper.getMainLooper())
     private val adapter get() = context.getSystemService(BluetoothManager::class.java)?.adapter
     private var running = false
@@ -180,6 +202,7 @@ class BleLink(
             }
             Protocol.CLAUDE -> Protocol.parseClaude(value)?.let(onClaude)
             Protocol.INFO -> onInfo(String(value, Charsets.UTF_8))
+            Protocol.SESSIONS -> onChunk(value)
         }
     }
 
@@ -218,6 +241,9 @@ class BleLink(
                 ops += subscribe(Protocol.STATS)
                 ops += subscribe(Protocol.CLAUDE)
                 ops += read(Protocol.CLAUDE)
+                // Encrypted: the first time, Android pairs with the Mac before this completes.
+                ops += subscribe(Protocol.SESSIONS)
+                chunkSeq = -1
                 next(g)
             }
         }

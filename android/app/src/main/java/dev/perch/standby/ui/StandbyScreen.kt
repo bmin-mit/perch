@@ -33,10 +33,10 @@ import androidx.lifecycle.compose.LifecycleStartEffect
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import dev.perch.standby.AppGraph
 
-private const val PAGES = 3
+private const val PAGES = 4
 
 /**
- * The whole StandBy experience: Clock, Weather and Mac pages, swiped horizontally.
+ * The whole StandBy experience: Clock, Weather, Mac and Claude Code pages, swiped horizontally.
  * Hosted by both the activity and the screensaver.
  *
  * @param onRequestPermissions non-null only where a permission dialog can be shown (the activity);
@@ -85,7 +85,12 @@ fun StandbyScreen(graph: AppGraph, onRequestPermissions: (() -> Unit)? = null) {
                                 graph.prefs.update { it.copy(clockFace = face) }
                             }
                             1 -> WeatherPage(weather, settings)
-                            else -> MacPage(mac)
+                            2 -> MacPage(mac)
+                            else -> ClaudePage(
+                                mac,
+                                now.atZone(java.time.ZoneId.systemDefault()).toEpochSecond(),
+                                settings.use24h,
+                            )
                         }
                     }
                 }

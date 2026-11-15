@@ -31,11 +31,41 @@ data class ClaudeStatus(
     val total: Int get() = working + waiting + idle
 }
 
+data class ToolUse(val at: Long, val name: String, val detail: String?)
+
+/** Everything known about one Claude Code session. Times are Unix seconds on the phone's clock. */
+data class SessionDetail(
+    val id: String,
+    val name: String,
+    val cwd: String,
+    val branch: String?,
+    val model: String?,
+    val mode: String?,
+    val state: ClaudeState,
+    val since: Long,
+    val started: Long,
+    val last: Long,
+    val tool: String?,
+    val detail: String?,
+    val prompt: String?,
+    val message: String?,
+    val prompts: Int,
+    val tools: Int,
+    val inputTokens: Long,
+    val outputTokens: Long,
+    val cacheReadTokens: Long,
+    val cacheWriteTokens: Long,
+    val contextTokens: Long,
+    val recent: List<ToolUse>,
+)
+
 data class MacSnapshot(
     val link: LinkState = LinkState.Scanning,
     val host: String? = null,
     val stats: MacStats? = null,
     val claude: ClaudeStatus? = null,
+    /** Null until the (paired, encrypted) details channel has delivered something. */
+    val sessions: List<SessionDetail>? = null,
     val cpuHistory: List<Float> = emptyList(),
     val memHistory: List<Float> = emptyList(),
     val downHistory: List<Float> = emptyList(),
@@ -51,6 +81,49 @@ object Protocol {
     val STATS: UUID = UUID.fromString("8f1e0002-6d2a-4b7c-9c41-5065726368aa")
     val CLAUDE: UUID = UUID.fromString("8f1e0003-6d2a-4b7c-9c41-5065726368aa")
     val INFO: UUID = UUID.fromString("8f1e0004-6d2a-4b7c-9c41-5065726368aa")
+    val SESSIONS: UUID = UUID.fromString("8f1e0005-6d2a-4b7c-9c41-5065726368aa")
+
+    /** Session details JSON: {"now": macUnixSeconds, "s": [ ... ]}. */
+    fun parseSessions(json: String): List<SessionDetail>? = try {
+        val root = org.json.JSONObject(json)
+        // Shift the Mac's timestamps onto the phone's clock in case the two disagree.
+        val skew = System.currentTimeMillis() / 1000 - root.getLong("now")
+        val list = root.getJSONArray("s")
+        (0 until list.length()).map { i ->
+            val o = list.getJSONObject(i)
+            fun str(key: String) = if (o.has(key) && !o.isNull(key)) o.getString(key) else null
+            val recent = o.optJSONArray("recent")
+            SessionDetail(
+                id = o.getString("id"),
+                name = o.getString("name"),
+                cwd = o.optString("cwd"),
+                branch = str("branch"),
+                model = str("model"),
+                mode = str("mode"),
+                state = ClaudeState.entries.getOrElse(o.optInt("state")) { ClaudeState.Idle },
+                since = o.optLong("since") + skew,
+                started = o.optLong("started") + skew,
+                last = o.optLong("last") + skew,
+                tool = str("tool"),
+                detail = str("detail"),
+                prompt = str("prompt"),
+                message = str("msg"),
+                prompts = o.optInt("prompts"),
+                tools = o.optInt("tools"),
+                inputTokens = o.optLong("in"),
+                outputTokens = o.optLong("out"),
+                cacheReadTokens = o.optLong("cr"),
+                cacheWriteTokens = o.optLong("cw"),
+                contextTokens = o.optLong("ctx"),
+                recent = (0 until (recent?.length() ?: 0)).map { j ->
+                    val r = recent!!.getJSONObject(j)
+                    ToolUse(r.optLong("t") + skew, r.getString("n"), if (r.has("d")) r.getString("d") else null)
+                },
+            )
+        }
+    } catch (e: org.json.JSONException) {
+        null
+    }
     val CCCD: UUID = UUID.fromString("00002902-0000-1000-8000-00805f9b34fb")
 
     /** [ver=1][cpu%][pressure][reserved] u32 memUsedMb, memTotalMb, downBps, upBps */

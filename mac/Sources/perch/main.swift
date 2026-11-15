@@ -5,6 +5,14 @@ if CommandLine.arguments.dropFirst().first == "hook" {
     ClaudeSessions.handleHook()
     exit(0)
 }
+// `perch sessions` prints the session details exactly as they are sent to the phone.
+if CommandLine.arguments.dropFirst().first == "sessions" {
+    let body = PerchProtocol.sessionsBody(ClaudeSessions.loadRecords(), transcripts: TranscriptReader())
+    if let data = try? JSONSerialization.data(withJSONObject: body, options: [.prettyPrinted, .sortedKeys]) {
+        print(String(decoding: data, as: UTF8.self))
+    }
+    exit(0)
+}
 
 final class AppDelegate: NSObject, NSApplicationDelegate {
     private let statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
@@ -14,6 +22,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private let statsLine = NSMenuItem(title: "", action: nil, keyEquivalent: "")
     private let claudeLine = NSMenuItem(title: "", action: nil, keyEquivalent: "")
     private var timer: Timer?
+    private let transcripts = TranscriptReader()
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         statusItem.button?.image = NSImage(systemSymbolName: "clock.badge", accessibilityDescription: "Perch")
@@ -41,6 +50,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 try? Data(line.utf8).write(to: log)
             }
         }
+        peripheral.onSessionsSubscribed = { [weak self] in
+            guard let self else { return }
+            let records = ClaudeSessions.loadRecords()
+            self.peripheral.update(
+                details: PerchProtocol.sessionsBody(records, transcripts: self.transcripts), force: true)
+        }
         _ = system.sample() // prime the counters so the first real sample has a baseline
         timer = Timer.scheduledTimer(withTimeInterval: 1, repeats: true) { [weak self] _ in self?.tick() }
         timer?.tolerance = 0.1
@@ -49,8 +64,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private func tick() {
         let s = system.sample()
         peripheral.update(stats: s)
-        let sessions = ClaudeSessions.load()
+        let records = ClaudeSessions.loadRecords()
+        let sessions = records.map(\.summary)
         peripheral.update(sessions: sessions)
+        peripheral.update(details: PerchProtocol.sessionsBody(records, transcripts: transcripts))
+        transcripts.forget(except: Set(records.compactMap(\.transcript)))
 
         statsLine.title = String(
             format: "CPU %d%% · RAM %.1f/%.0f GB · ↓%@ ↑%@",

@@ -11,6 +11,15 @@ final class Peripheral: NSObject, CBPeripheralManagerDelegate {
     private let infoChar = CBMutableCharacteristic(
         type: PerchProtocol.info, properties: [.read], value: nil, permissions: [.readable])
 
+    private let sessionsChar = CBMutableCharacteristic(
+        type: PerchProtocol.sessions, properties: [.notifyEncryptionRequired], value: nil,
+        permissions: [.readEncryptionRequired])
+
+    private var sessionsBody = Data()
+    private var sessionsQueue: [Data] = []
+    private var sessionsSeq: UInt16 = 0
+    private var sessionSubscribers = 0
+
     private var statsValue = Data()
     private var claudeValue = Data()
     private var pendingClaude = false
@@ -44,6 +53,30 @@ final class Peripheral: NSObject, CBPeripheralManagerDelegate {
         sendClaude()
     }
 
+    /// Sends full session details when they change (or when `force` is set, e.g. a new subscriber).
+    func update(details body: [[String: Any]], force: Bool = false) {
+        guard let data = try? JSONSerialization.data(withJSONObject: body, options: [.sortedKeys]) else { return }
+        guard force || data != sessionsBody else { return }
+        sessionsBody = data
+        guard sessionSubscribers > 0 else { return }
+        let wrapped: [String: Any] = ["now": Int(Date().timeIntervalSince1970), "s": body]
+        guard let payload = try? JSONSerialization.data(withJSONObject: wrapped) else { return }
+        sessionsSeq &+= 1
+        // Anything still queued is superseded; the phone discards incomplete sequences.
+        sessionsQueue = PerchProtocol.chunks(payload, seq: sessionsSeq, limit: payloadLimit)
+        drainSessions()
+    }
+
+    private func drainSessions() {
+        while let chunk = sessionsQueue.first {
+            guard manager.updateValue(chunk, for: sessionsChar, onSubscribedCentrals: nil) else { return }
+            sessionsQueue.removeFirst()
+        }
+    }
+
+    /// Set by the app so a new subscriber gets the current details immediately.
+    var onSessionsSubscribed: (() -> Void)?
+
     private func sendClaude() {
         guard !subscribers.isEmpty else { return }
         // false means the transmit queue is full; retry from peripheralManagerIsReady.
@@ -67,10 +100,12 @@ final class Peripheral: NSObject, CBPeripheralManagerDelegate {
         report()
         guard peripheral.state == .poweredOn else {
             subscribers.removeAll()
+            sessionSubscribers = 0
+            sessionsQueue.removeAll()
             return
         }
         let service = CBMutableService(type: PerchProtocol.service, primary: true)
-        service.characteristics = [statsChar, claudeChar, infoChar]
+        service.characteristics = [statsChar, claudeChar, infoChar, sessionsChar]
         peripheral.removeAllServices()
         peripheral.add(service)
     }
@@ -108,6 +143,10 @@ final class Peripheral: NSObject, CBPeripheralManagerDelegate {
                            didSubscribeTo characteristic: CBCharacteristic) {
         subscribers[central.identifier] = central
         report()
+        if characteristic.uuid == PerchProtocol.sessions {
+            sessionSubscribers += 1
+            onSessionsSubscribed?()
+        }
         if characteristic.uuid == PerchProtocol.claude {
             // Re-encode for this central's MTU and send right away.
             claudeValue = Data()
@@ -120,10 +159,15 @@ final class Peripheral: NSObject, CBPeripheralManagerDelegate {
         if characteristic.uuid == PerchProtocol.stats {
             subscribers.removeValue(forKey: central.identifier)
         }
+        if characteristic.uuid == PerchProtocol.sessions {
+            sessionSubscribers = max(0, sessionSubscribers - 1)
+            if sessionSubscribers == 0 { sessionsQueue.removeAll() }
+        }
         report()
     }
 
     func peripheralManagerIsReady(toUpdateSubscribers peripheral: CBPeripheralManager) {
+        drainSessions()
         if pendingClaude { sendClaude() }
     }
 }

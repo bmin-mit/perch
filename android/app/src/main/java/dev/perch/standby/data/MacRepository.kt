@@ -37,6 +37,7 @@ class MacRepository(
         onInfo = { host -> _state.update { it.copy(host = host) } },
         onStats = ::pushStats,
         onClaude = { claude -> _state.update { it.copy(claude = claude) } },
+        onSessions = { sessions -> _state.update { it.copy(sessions = sessions) } },
     )
 
     /** Call while a screen is visible; the link is torn down when the last user releases. */
@@ -105,6 +106,7 @@ class MacRepository(
         var down = 600_000f
         var up = 90_000f
         var tick = 0
+        val started = System.currentTimeMillis() / 1000
         while (true) {
             cpu = (cpu + Random.nextFloat() * 26 - 13).coerceIn(4f, 96f)
             mem = (mem + Random.nextFloat() * 300 - 150).coerceIn(8_000f, 15_000f)
@@ -122,10 +124,51 @@ class MacRepository(
             )
             if (tick % 8 == 0) {
                 val frame = frames[(tick / 8) % frames.size]
-                _state.update { it.copy(claude = frame) }
+                _state.update { it.copy(claude = frame, sessions = demoSessions(frame, started)) }
             }
             tick++
             delay(1000)
+        }
+    }
+
+    private fun demoSessions(frame: ClaudeStatus, t0: Long): List<SessionDetail> {
+        val now = System.currentTimeMillis() / 1000
+        return frame.sessions.mapIndexed { i, s ->
+            val tools = listOf(
+                ToolUse(now - 4, "Bash", "Run the unit tests"),
+                ToolUse(now - 31, "Edit", "BleLink.kt"),
+                ToolUse(now - 58, "Read", "MacRepository.kt"),
+                ToolUse(now - 95, "Grep", "onServiceChanged"),
+                ToolUse(now - 140, "mcp__github__get_pull_request", "#42"),
+            )
+            SessionDetail(
+                id = "demo$i",
+                name = s.name,
+                cwd = "~/code/${s.name}",
+                branch = if (i == 0) "feature/login" else "main",
+                model = if (i == 1) "claude-sonnet-5-5" else "claude-opus-5-5",
+                mode = if (i == 0) "acceptEdits" else "default",
+                state = s.state,
+                since = now - 20 - i * 40,
+                started = t0 - 1800 - i * 900,
+                last = now - 2,
+                tool = if (s.state == ClaudeState.Working) "Bash" else null,
+                detail = if (s.state == ClaudeState.Working) "Run the unit tests" else null,
+                prompt = when (i) {
+                    0 -> "The login form accepts empty passwords. Add validation on the server and show an inline error."
+                    1 -> "Reconnect automatically when the Mac agent restarts"
+                    else -> "Update my zsh aliases for git"
+                },
+                message = if (s.state == ClaudeState.Waiting) "Claude needs your permission to use Bash" else null,
+                prompts = 6 + i * 3,
+                tools = 41 + i * 17,
+                inputTokens = 1_830,
+                outputTokens = 48_200L + i * 9_000,
+                cacheReadTokens = 2_400_000,
+                cacheWriteTokens = 160_000,
+                contextTokens = 86_000L + i * 21_000,
+                recent = tools,
+            )
         }
     }
 }
